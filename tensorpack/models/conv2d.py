@@ -16,6 +16,7 @@ def Conv2D(x, out_channel, kernel_shape,
            W_init=None, b_init=None,
            nl=tf.nn.relu, split=1, use_bias=True):
     """
+    x: image of NCHW
     kernel_shape: (h, w) or a int
     stride: (h, w) or a int
     padding: 'valid' or 'same'
@@ -24,7 +25,7 @@ def Conv2D(x, out_channel, kernel_shape,
     """
     in_shape = x.get_shape().as_list()
     num_in = np.prod(in_shape[1:])
-    in_channel = in_shape[-1]
+    in_channel = in_shape[1]
     assert in_channel % split == 0
     assert out_channel % split == 0
 
@@ -44,13 +45,13 @@ def Conv2D(x, out_channel, kernel_shape,
         b = tf.get_variable('b', [out_channel], initializer=b_init)
 
     if split == 1:
-        conv = tf.nn.conv2d(x, W, stride, padding)
+        conv = tf.nn.conv2d(x, W, stride, padding, data_format='NCHW')
     else:
         inputs = tf.split(3, split, x)
         kernels = tf.split(3, split, W)
-        outputs = [tf.nn.conv2d(i, k, stride, padding)
+        outputs = [tf.nn.conv2d(i, k, stride, padding, data_format='NCHW')
                    for i, k in zip(inputs, kernels)]
         conv = tf.concat(3, outputs)
-    return nl(tf.nn.bias_add(conv, b) if use_bias else conv, name='output')
+    return nl(tf.nn.bias_add(conv, b, data_format='NCHW') if use_bias else conv, name='output')
 
 

@@ -24,7 +24,9 @@ def MaxPooling(x, shape, stride=None, padding='VALID'):
     else:
         stride = shape4d(stride)
 
-    return tf.nn.max_pool(x, ksize=shape, strides=stride, padding=padding)
+    return tf.nn.max_pool(x, ksize=shape,
+                          strides=stride, padding=padding,
+                          data_format='NCHW')
 
 @layer_register()
 def AvgPooling(x, shape, stride=None, padding='VALID'):
@@ -40,13 +42,16 @@ def AvgPooling(x, shape, stride=None, padding='VALID'):
     else:
         stride = shape4d(stride)
 
-    return tf.nn.avg_pool(x, ksize=shape, strides=stride, padding=padding)
+    return tf.nn.avg_pool(x, ksize=shape,
+                          strides=stride, padding=padding,
+                          data_format='NCHW')
 
 @layer_register()
 def GlobalAvgPooling(x):
     assert x.get_shape().ndims == 4
-    return tf.reduce_mean(x, [1, 2])
+    return tf.reduce_mean(x, [2, 3])
 
+# TODO NCHW
 @layer_register()
 def FixedUnPooling(x, shape, unpool_mat=None):
     """
@@ -55,6 +60,7 @@ def FixedUnPooling(x, shape, unpool_mat=None):
     shape: int or list/tuple of length 2
     unpool_mat: a tf matrix with size=shape. if None, will use a mat with 1 at top-left corner
     """
+    x = tf.transpose(x, [0,3,1,2])
     shape = shape2d(shape)
     input_shape = x.get_shape().as_list()
     assert len(input_shape) == 4
@@ -76,6 +82,7 @@ def FixedUnPooling(x, shape, unpool_mat=None):
     prod = tf.reshape(prod, [-1, input_shape[1] * shape[0],
                             input_shape[2] * shape[1],
                             input_shape[3]])
+    prod = tf.transpose(prod, [0,2,3,1])
     return prod
 
 from ._test import TestModel

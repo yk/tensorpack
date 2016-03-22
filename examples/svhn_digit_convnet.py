@@ -8,7 +8,7 @@ import argparse
 import numpy as np
 import os
 
-from tensorpack.train import TrainConfig, QueueInputTrainer
+from tensorpack.train import *
 from tensorpack.models import *
 from tensorpack.callbacks import *
 from tensorpack.utils import *
@@ -36,15 +36,15 @@ class Model(ModelDesc):
 
         nl = lambda x, name: tf.abs(tf.tanh(x), name=name)
         l = Conv2D('conv1', image, 24, 5, padding='VALID', nl=nl)
-        l = MaxPooling('pool1', l, 2, padding='SAME')
+        l = MaxPooling('pool1', l, 2)
         l = Conv2D('conv2', l, 32, 3, nl=nl, padding='VALID')
         l = Conv2D('conv3', l, 32, 3, nl=nl, padding='VALID')
-        l = MaxPooling('pool2', l, 2, padding='SAME')
+        l = MaxPooling('pool2', l, 2)
         l = Conv2D('conv4', l, 64, 3, nl=nl, padding='VALID')
 
         l = tf.nn.dropout(l, keep_prob)
-        l = FullyConnected('fc0', l, 512,
-                           b_init=tf.constant_initializer(0.1), nl=nl)
+        l = FullyConnected('fc0', l, 512, nl=nl,
+                           b_init=tf.constant_initializer(0.1))
         # fc will have activation summary by default. disable for the output layer
         logits = FullyConnected('linear', l, out_dim=10, summary_activation=False,
                                 nl=tf.identity)
@@ -63,10 +63,8 @@ class Model(ModelDesc):
             MOVING_SUMMARY_VARS_KEY, tf.reduce_mean(wrong, name='train_error'))
 
         # weight decay on all W of fc layers
-        wd_cost = tf.mul(0.00001,
-                         regularize_cost('fc.*/W', tf.nn.l2_loss),
-                         name='regularize_loss')
-        tf.add_to_collection(MOVING_SUMMARY_VARS_KEY, wd_cost)
+        #wd_cost = regularize_cost('fc.*/W', l2_regularizer(0.00002))
+        wd_cost = 0.00001 * regularize_cost('fc.*/W', tf.nn.l2_loss)
 
         add_param_summary([('.*/W', ['histogram', 'sparsity'])])   # monitor W
         return tf.add_n([cost, wd_cost], name='cost')
@@ -89,8 +87,8 @@ def get_config():
     ]
     train = AugmentImageComponent(train, augmentors)
     train = BatchData(train, 128)
-    nr_proc = 5
-    train = PrefetchData(train, 5, nr_proc)
+    nr_proc = 10    # you do need a good desktop CPU to run data preprocessing in full-speed
+    train = PrefetchData(train, 30, nr_proc)
     step_per_epoch = train.size()
 
     augmentors = [

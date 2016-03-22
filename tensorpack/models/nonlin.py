@@ -12,12 +12,16 @@ __all__ = ['Maxout', 'PReLU', 'LeakyReLU']
 
 @layer_register()
 def Maxout(x, num_unit):
+    """
+    x: NCHW
+    num_unit: int. channel must be divided by num_unit
+    """
     input_shape = x.get_shape().as_list()
     assert len(input_shape) == 4
-    ch = input_shape[3]
+    ch = input_shape[1]
     assert ch % num_unit == 0
-    x = tf.reshape(x, [-1, input_shape[1], input_shape[2], ch / 3, 3])
-    return tf.reduce_max(x, 4, name='output')
+    x = tf.reshape(x, [-1, ch / num_unit, num_unit, input_shape[2], input_shape[3]])
+    return tf.reduce_max(x, 2, name='output')
 
 @layer_register()
 def PReLU(x, init=tf.constant_initializer(0.001), name=None):

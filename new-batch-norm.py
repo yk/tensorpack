@@ -25,25 +25,30 @@ def BatchNorm(x, use_local_stat=True, decay=0.9, epsilon=1e-5):
     Whole-population mean/variance is calculated by a running-average mean/variance, with decay rate 0.999
     Epsilon for variance is set to 1e-5, as is torch/nn: https://github.com/torch/nn/blob/master/BatchNormalization.lua
 
-    x: BHWC tensor or a vector
+    x: BCHW or BC tensor
     use_local_stat: bool. whether to use mean/var of this batch or the running
     average. Usually set to True in training and False in testing
     """
 
-    x = tf.transpose(x, [0, 2, 3, 1])
     shape = x.get_shape().as_list()
+    n_out = shape[1]  # channel
     assert len(shape) in [2, 4]
-
-    n_out = shape[-1]  # channel
-    beta = tf.get_variable('beta', [n_out])
+    if len(shape) == 2:
+        batch_mean, batch_var = tf.nn.moments(x, [0], name='moments',
+                                              keep_dims=True)
+        batch_mean.set_shape([1, n_out])
+        batch_var.set_shape([1, n_out])
+    else:
+        batch_mean, batch_var = tf.nn.moments(x, [0, 2, 3], name='moments',
+                                              keep_dims=True)
+        batch_mean.set_shape([1, n_out, 1, 1])
+        batch_var.set_shape([1, n_out, 1, 1])
+    param_shape = batch_mean.get_shape()
+    beta = tf.get_variable('beta', param_shape)
     gamma = tf.get_variable(
-        'gamma', [n_out],
+        'gamma', param_shape,
         initializer=tf.constant_initializer(1.0))
 
-    if len(shape) == 2:
-        batch_mean, batch_var = tf.nn.moments(x, [0], name='moments', keep_dims=False)
-    else:
-        batch_mean, batch_var = tf.nn.moments(x, [0, 1, 2], name='moments', keep_dims=False)
 
     ema = tf.train.ExponentialMovingAverage(decay=decay)
     ema_apply_op = ema.apply([batch_mean, batch_var])
@@ -51,11 +56,10 @@ def BatchNorm(x, use_local_stat=True, decay=0.9, epsilon=1e-5):
 
     if use_local_stat:
         with tf.control_dependencies([ema_apply_op]):
-            ret = tf.nn.batch_normalization(
+            return tf.nn.batch_normalization(
                 x, batch_mean, batch_var, beta, gamma, epsilon, 'bn')
     else:
         batch = tf.cast(tf.shape(x)[0], tf.float32)
         mean, var = ema_mean, ema_var * batch / (batch - 1) # unbiased variance estimator
-        ret = tf.nn.batch_normalization(
+        return tf.nn.batch_normalization(
             x, mean, var, beta, gamma, epsilon, 'bn')
-    return tf.transpose(ret, [0, 3, 1, 2])

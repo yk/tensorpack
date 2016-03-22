@@ -38,7 +38,7 @@ class Model(ModelDesc):
         keep_prob = tf.constant(0.5 if is_training else 1.0)
 
         image, label = input_vars
-        image = tf.expand_dims(image, 3)    # add a single channel
+        image = tf.expand_dims(image, 1)    # add a single channel
 
         nl = PReLU.f
         image = image * 2 - 1
