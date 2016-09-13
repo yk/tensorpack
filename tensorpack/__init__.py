@@ -5,12 +5,12 @@
 import numpy # avoid https://github.com/tensorflow/tensorflow/issues/2034
 import cv2  # avoid https://github.com/tensorflow/tensorflow/issues/1924
 
-from . import models
-from . import train
-from . import utils
-from . import tfutils
-from . import callbacks
-from . import dataflow
+import models
+import train
+import utils
+import tfutils
+import callbacks
+import dataflow
 
 from .train import *
 from .models import *
