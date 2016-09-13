@@ -5,13 +5,13 @@
 import numpy # avoid https://github.com/tensorflow/tensorflow/issues/2034
 import cv2  # avoid https://github.com/tensorflow/tensorflow/issues/1924
 
-from .train import *
-from .models import *
-from .utils import *
-from .tfutils import *
-from .callbacks import *
-from .dataflow import *
-from .predict import *
+from tensorpack.train import *
+from tensorpack.models import *
+from tensorpack.utils import *
+from tensorpack.tfutils import *
+from tensorpack.callbacks import *
+from tensorpack.dataflow import *
+from tensorpack.predict import *
 
 __all__ = ["models", "train", "utils", "tfutils", "callbacks", "dataflow"]
 
