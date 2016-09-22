@@ -15,9 +15,9 @@ from tensorpack.utils.stat import  *
 from tensorpack.callbacks import *
 
 global get_player
+get_player = None
 
 def play_one_episode(player, func, verbose=False):
-    # 0.01-greedy evaluation
     def f(s):
         spc = player.get_action_space()
         act = func([[s]])[0][0].argmax()
@@ -57,22 +57,26 @@ def eval_with_funcs(predict_funcs, nr_eval):
                     return
                 self.queue_put_stoppable(self.q, score)
 
-    q = queue.Queue(maxsize=2)
+    q = queue.Queue()
     threads = [Worker(f, q) for f in predict_funcs]
 
     for k in threads:
         k.start()
+        time.sleep(0.1) # avoid simulator bugs
     stat = StatCounter()
     try:
         for _ in tqdm(range(nr_eval), **get_tqdm_kwargs()):
             r = q.get()
             stat.feed(r)
-    except:
-        logger.exception("Eval")
-    finally:
         logger.info("Waiting for all the workers to finish the last run...")
         for k in threads: k.stop()
         for k in threads: k.join()
+        while q.qsize():
+            r = q.get()
+            stat.feed(r)
+    except:
+        logger.exception("Eval")
+    finally:
         if stat.count > 0:
             return (stat.average, stat.max)
         return (0, 0)
@@ -98,7 +102,7 @@ class Evaluator(Callback):
         t = time.time()
         mean, max = eval_with_funcs(self.pred_funcs, nr_eval=self.eval_episode)
         t = time.time() - t
-        if t > 8 * 60:  # eval takes too long
-            self.eval_episode = int(self.eval_episode * 0.89)
+        if t > 10 * 60:  # eval takes too long
+            self.eval_episode = int(self.eval_episode * 0.94)
         self.trainer.write_scalar_summary('mean_score', mean)
         self.trainer.write_scalar_summary('max_score', max)
