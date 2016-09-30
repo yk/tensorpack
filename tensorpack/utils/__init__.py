@@ -3,6 +3,7 @@
 #  Author: Yuxin Wu <ppwwyyxx@gmail.com>
 
 from pkgutil import walk_packages
+from tensorpack.utils import logger
 import os
 
 """
