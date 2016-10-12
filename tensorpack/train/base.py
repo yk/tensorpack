@@ -128,7 +128,7 @@ class Trainer(object):
                             if self.coord.should_stop():
                                 return
                             self.run_step()
-                            #callbacks.trigger_step()   # not useful?
+                            callbacks.trigger_step()   # not useful?
                             self.global_step += 1
                         self.trigger_epoch()
             except (KeyboardInterrupt, Exception):
