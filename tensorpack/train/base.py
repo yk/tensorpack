@@ -101,11 +101,11 @@ class Trainer(object):
 
     def main_loop(self):
         # some final operations that might modify the graph
-        self._init_summary()
         get_global_step_var()   # ensure there is such var, before finalizing the graph
         logger.info("Setup callbacks ...")
         callbacks = self.config.callbacks
         callbacks.setup_graph(self) # TODO use weakref instead?
+        self._init_summary()
         logger.info("Initializing graph variables ...")
         self.sess.run(tf.initialize_all_variables())
         self.config.session_init.init(self.sess)
