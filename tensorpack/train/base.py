@@ -126,15 +126,18 @@ class Trainer(object):
                                 self.config.step_per_epoch,
                                 **get_tqdm_kwargs(leave=True)):
                             if self.coord.should_stop():
+                                print('coord says we should stop')
                                 return
                             self.run_step()
                             callbacks.trigger_step()   # not useful?
                             self.global_step += 1
                         self.trigger_epoch()
-            except (KeyboardInterrupt, Exception):
+            except (KeyboardInterrupt, Exception) as e:
+                print('there is an exception: ', str(e))
                 raise
             finally:
                 # Do I need to run queue.close?
+                print('closing session')
                 callbacks.after_train()
                 self.coord.request_stop()
                 self.summary_writer.close()
