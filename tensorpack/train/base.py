@@ -5,19 +5,23 @@
 from abc import ABCMeta, abstractmethod
 import signal
 import re
+import weakref
 from six.moves import range
 import tqdm
 
 import tensorflow as tf
 from .config import TrainConfig
-from ..utils import *
-from ..utils.timer import *
+from ..utils import logger, get_tqdm_kwargs
+from ..utils.timer import timed_operation
 from ..utils.concurrency import start_proc_mask_signal
 from ..callbacks import StatHolder
-from ..tfutils import *
+from ..tfutils import get_global_step, get_global_step_var
 from ..tfutils.summary import create_summary
 
-__all__ = ['Trainer']
+__all__ = ['Trainer', 'StopTraining']
+
+class StopTraining(BaseException):
+    pass
 
 class Trainer(object):
     """
@@ -65,7 +69,13 @@ class Trainer(object):
         return [self.get_predict_func(input_names, output_names) for k in range(n)]
 
     def trigger_epoch(self):
+        # by default, add this two stat
+        self.stat_holder.add_stat('global_step', self.global_step)
+        self.stat_holder.add_stat('epoch_num', self.epoch_num)
+
+        # trigger subclass
         self._trigger_epoch()
+        # trigger callbacks
         self.config.callbacks.trigger_epoch()
         self.summary_writer.flush()
 
@@ -82,8 +92,6 @@ class Trainer(object):
         self.summary_op = tf.merge_all_summaries()
         # create an empty StatHolder
         self.stat_holder = StatHolder(logger.LOG_DIR)
-        # save global_step in stat.json, but don't print it
-        self.stat_holder.add_blacklist_tag(['global_step'])
 
     def _process_summary(self, summary_str):
         summary = tf.Summary.FromString(summary_str)
@@ -104,7 +112,7 @@ class Trainer(object):
         get_global_step_var()   # ensure there is such var, before finalizing the graph
         logger.info("Setup callbacks ...")
         callbacks = self.config.callbacks
-        callbacks.setup_graph(self) # TODO use weakref instead?
+        callbacks.setup_graph(weakref.proxy(self))
         self._init_summary()
         logger.info("Initializing graph variables ...")
         self.sess.run(tf.initialize_all_variables())
@@ -118,10 +126,11 @@ class Trainer(object):
                 logger.info("Start training with global_step={}".format(self.global_step))
 
                 callbacks.before_train()
-                for epoch in range(self.config.starting_epoch, self.config.max_epoch+1):
+                for self.epoch_num in range(
+                        self.config.starting_epoch, self.config.max_epoch+1):
                     with timed_operation(
-                        'Epoch {}, global_step={}'.format(
-                            epoch, self.global_step + self.config.step_per_epoch)):
+                        'Epoch {} (global_step {})'.format(
+                            self.epoch_num, self.global_step + self.config.step_per_epoch)):
                         for step in tqdm.trange(
                                 self.config.step_per_epoch,
                                 **get_tqdm_kwargs(leave=True)):
@@ -132,12 +141,13 @@ class Trainer(object):
                             callbacks.trigger_step()   # not useful?
                             self.global_step += 1
                         self.trigger_epoch()
+            except StopTraining:
+                logger.info("Training was stopped.")
             except (KeyboardInterrupt, Exception) as e:
-                print('there is an exception: ', str(e))
+                logger.info('there is an exception: ' + str(e))
                 raise
             finally:
                 # Do I need to run queue.close?
-                print('closing session')
                 callbacks.after_train()
                 self.coord.request_stop()
                 self.summary_writer.close()

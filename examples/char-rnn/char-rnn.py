@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 # File: char-rnn.py
-# Author: Yuxin Wu <ppwwyyxx@gmail.com>
+# Author: Yuxin Wu <ppwwyyxxc@gmail.com>
 
 import tensorflow as tf
 import numpy as np
@@ -34,7 +34,6 @@ param.grad_clip = 5.
 param.vocab_size = None
 param.softmax_temprature = 1
 param.corpus = 'input.txt'
-# Get corpus to play with at: http://cs.stanford.edu/people/karpathy/char-rnn/
 
 class CharRNNData(DataFlow):
     def __init__(self, input_file, size):

@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # -*- coding: UTF-8 -*-
 # File: dump-model-params.py
 # Author: Yuxin Wu <ppwwyyxx@gmail.com>
@@ -24,7 +24,7 @@ with tf.Graph().as_default() as G:
     if args.config:
         MODEL = imp.load_source('config_script', args.config).Model
         M = MODEL()
-        M.build_graph(M.get_input_vars(), is_training=False)
+        M.build_graph(M.get_input_vars())
     else:
         M = ModelFromMetaGraph(args.meta)
 
@@ -49,5 +49,7 @@ with tf.Graph().as_default() as G:
                 var_dict[name] = v
             logger.info("Variables to dump:")
             logger.info(", ".join(var_dict.keys()))
-            saver = tf.train.Saver(var_list=var_dict)
+            saver = tf.train.Saver(
+                    var_list=var_dict,
+                    write_version=tf.train.SaverDef.V2)
             saver.save(sess, args.output, write_meta_graph=False)

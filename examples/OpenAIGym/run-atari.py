@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 # File: run-atari.py
 # Author: Yuxin Wu <ppwwyyxxc@gmail.com>
@@ -15,7 +15,6 @@ from tensorpack.RL import *
 
 IMAGE_SIZE = (84, 84)
 FRAME_HISTORY = 4
-GAMMA = 0.99
 CHANNEL = FRAME_HISTORY * 3
 IMAGE_SHAPE3 = IMAGE_SIZE + (CHANNEL,)
 
@@ -62,28 +61,31 @@ class Model(ModelDesc):
         policy = self._get_NN_prediction(state)
         self.logits = tf.nn.softmax(policy, name='logits')
 
-def run_submission(cfg):
-    dirname = 'gym-submit'
-    player = get_player(dumpdir=dirname)
+def run_submission(cfg, output, nr):
+    player = get_player(dumpdir=output)
     predfunc = get_predict_func(cfg)
-    for k in range(100):
+    for k in range(nr):
         if k != 0:
             player.restart_episode()
         score = play_one_episode(player, predfunc)
         print("Total:", score)
 
-def do_submit():
-    dirname = 'gym-submit'
-    gym.upload(dirname, api_key='xxx')
+def do_submit(output):
+    gym.upload(output, api_key='xxx')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--gpu', help='comma separated list of GPU(s) to use.') # nargs='*' in multi mode
     parser.add_argument('--load', help='load model', required=True)
-    parser.add_argument('--env', help='env', required=True)
+    parser.add_argument('--env', help='environment name', required=True)
+    parser.add_argument('--episode', help='number of episodes to run',
+            type=int, default=100)
+    parser.add_argument('--output', help='output directory', default='gym-submit')
     args = parser.parse_args()
 
     ENV_NAME = args.env
+    assert ENV_NAME
+    logger.info("Environment Name: {}".format(ENV_NAME))
     p = get_player(); del p    # set NUM_ACTIONS
 
     if args.gpu:
@@ -94,4 +96,4 @@ if __name__ == '__main__':
             session_init=SaverRestore(args.load),
             input_var_names=['state'],
             output_var_names=['logits'])
-    run_submission(cfg)
+    run_submission(cfg, args.output, args.episode)

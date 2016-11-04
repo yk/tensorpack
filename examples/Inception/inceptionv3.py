@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: UTF-8 -*-
 # File: inceptionv3.py
-# Author: Yuxin Wu <ppwwyyxx@gmail.com>
+# Author: Yuxin Wu <ppwwyyxxc@gmail.com>
 
 import cv2
 import argparse
@@ -21,11 +21,15 @@ See "Rethinking the Inception Architecture for Computer Vision", arxiv:1512.0056
 
 This config follows the official inceptionv3 setup (https://github.com/tensorflow/models/tree/master/inception/inception)
 with much much fewer lines of code.
-It reaches 74.5% single-crop validation accuracy, slightly better than the official code,
-and has the same running speed as well.
+It reaches 74% single-crop validation accuracy,
+and has the same running speed as the official code.
+The hyperparameters here are for 8 GPUs, so the effective batch size is 8*64 = 512.
+With 8 TitanX it runs about 0.45 it/s.
 """
 
-BATCH_SIZE = 64
+TOTAL_BATCH_SIZE = 512
+NR_GPU = 8
+BATCH_SIZE = TOTAL_BATCH_SIZE // NR_GPU
 INPUT_SHAPE = 299
 
 class Model(ModelDesc):
@@ -35,7 +39,7 @@ class Model(ModelDesc):
 
     def _build_graph(self, input_vars):
         image, label = input_vars
-        image = image / 128.0 - 1   # ?
+        image = image / 255.0   # ?
 
         def proj_kk(l, k, ch_r, ch, stride=1):
             l = Conv2D('conv{0}{0}r'.format(k), l, ch_r, 1)
@@ -69,8 +73,8 @@ class Model(ModelDesc):
                 .Conv2D('conv277ba', ch_r, [7,1])
                 .Conv2D('conv277bb', ch, [1,7])())
 
-        nl = BNReLU(decay=0.9997, epsilon=1e-3)
-        with argscope(Conv2D, nl=nl, use_bias=False):
+        with argscope(Conv2D, nl=BNReLU, use_bias=False),\
+                argscope(BatchNorm, decay=0.9997, epsilon=1e-3):
             l = (LinearWrap(image)
                 .Conv2D('conv0', 32, 3, stride=2, padding='VALID') #299
                 .Conv2D('conv1', 32, 3, padding='VALID') #149
@@ -147,7 +151,6 @@ class Model(ModelDesc):
                 ], name='concat')
             for x in ['a', 'b']:
                 with tf.variable_scope('incep-8-2048{}'.format(x)) as scope:
-                    #print scope.name
                     br11 = Conv2D('conv11', l, 320, 1)
                     br33 = Conv2D('conv133r', l, 384, 1)
                     br33 = tf.concat(3, [
@@ -257,8 +260,6 @@ def get_config():
     dataset_train = get_data('train')
     dataset_val = get_data('val')
 
-    sess_config = get_default_sess_config(0.9)
-
     lr = tf.Variable(0.045, trainable=False, name='learning_rate')
     tf.scalar_summary('learning_rate', lr)
 
@@ -268,15 +269,15 @@ def get_config():
         callbacks=Callbacks([
             StatPrinter(), ModelSaver(),
             InferenceRunner(dataset_val, [
-                ClassificationError('wrong-top1', 'val-top1-error'),
-                ClassificationError('wrong-top5', 'val-top5-error')]),
+                ClassificationError('wrong-top1', 'val-error-top1'),
+                ClassificationError('wrong-top5', 'val-error-top5')]),
             ScheduledHyperParamSetter('learning_rate',
                                       [(5, 0.03), (9, 0.01), (12, 0.006),
                                        (17, 0.003), (22, 1e-3), (36, 2e-4),
                                        (41, 8e-5), (48, 1e-5), (53, 2e-6)]),
             HumanHyperParamSetter('learning_rate')
         ]),
-        session_config=sess_config,
+        session_config=get_default_sess_config(0.9),
         model=Model(),
         step_per_epoch=5000,
         max_epoch=100,

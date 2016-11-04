@@ -1,12 +1,12 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # -*- coding: UTF-8 -*-
 # File: pool.py
 # Author: Yuxin Wu <ppwwyyxx@gmail.com>
 import tensorflow as tf
 import numpy
 
-from ._common import *
-from ..tfutils.symbolic_functions import *
+from ._common import layer_register, shape2d, shape4d
+from ..tfutils import symbolic_functions as symbf
 
 __all__ = ['MaxPooling', 'FixedUnPooling', 'AvgPooling', 'GlobalAvgPooling',
            'BilinearUpSample']
@@ -105,9 +105,9 @@ def FixedUnPooling(x, shape, unpool_mat=None):
     assert unpool_mat.get_shape().as_list() == list(shape)
 
     # perform a tensor-matrix kronecker product
-    fx = flatten(tf.transpose(x, [0, 3, 1, 2]))
+    fx = symbf.flatten(tf.transpose(x, [0, 3, 1, 2]))
     fx = tf.expand_dims(fx, -1)       # (bchw)x1
-    mat = tf.expand_dims(flatten(unpool_mat), 0)    #1x(shxsw)
+    mat = tf.expand_dims(symbf.flatten(unpool_mat), 0)    #1x(shxsw)
     prod = tf.matmul(fx, mat)    #(bchw) x(shxsw)
     prod = tf.reshape(prod, tf.pack(
         [-1, input_shape[3], input_shape[1], input_shape[2], shape[0], shape[1]]))
@@ -136,21 +136,26 @@ def BilinearUpSample(x, shape):
                 ret[x,y] = (1 - abs(x / f - c)) * (1 - abs(y / f - c))
         return ret
 
-    ch = x.get_shape().as_list()[3]
-    shape = int(shape)
-    unpool_mat = np.zeros((shape, shape), dtype='float32')
-    unpool_mat[-1,-1] = 1
-    x = FixedUnPooling('unpool', x, shape, unpool_mat)
+    inp_shape = x.get_shape().as_list()
+    ch = inp_shape[3]
+    assert ch is not None
 
+    shape = int(shape)
     filter_shape = 2 * shape
     w = bilinear_conv_filler(filter_shape)
     w = np.repeat(w, ch * ch).reshape((filter_shape, filter_shape, ch, ch))
-    weight_var = tf.constant(w,
-                             tf.float32,
-                             shape=(filter_shape, filter_shape, ch, ch))
+    weight_var = tf.constant(w, tf.float32,
+                             shape=(filter_shape, filter_shape, ch, ch),
+                             name='bilinear_upsample_filter')
+    deconv = tf.nn.conv2d_transpose(x, weight_var,
+            tf.shape(x) * tf.constant([1, shape, shape, 1], tf.int32),
+            [1,shape,shape,1], 'SAME')
 
-    output = tf.nn.conv2d(x, weight_var, [1,1,1,1], padding='SAME')
-    return output
+    if inp_shape[1]: inp_shape[1] *= shape
+    if inp_shape[2]: inp_shape[2] *= shape
+    deconv.set_shape(inp_shape)
+    return deconv
+
 
 from ._test import TestModel
 class TestPool(TestModel):
@@ -179,14 +184,14 @@ class TestPool(TestModel):
         inp = tf.reshape(inp, [1, h, w, 1])
 
         output = BilinearUpSample('upsample', inp, scale)
-        res = self.run_variable(output)
+        res = self.run_variable(output)[0,:,:,0]
 
         from skimage.transform import rescale
         res2 = rescale(mat, scale)
 
-        diff = np.abs(res2 - res[0,:,:,0])
+        diff = np.abs(res2 - res)
 
-        # not equivalent to rescale on edge
+        # not equivalent to rescale on edge?
         diff[0,:] = 0
         diff[:,0] = 0
         if not diff.max() < 1e-4:

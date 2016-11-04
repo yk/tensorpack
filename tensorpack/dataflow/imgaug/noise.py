@@ -7,7 +7,7 @@ from .base import ImageAugmentor
 import numpy as np
 import cv2
 
-__all__ = ['JpegNoise', 'GaussianNoise']
+__all__ = ['JpegNoise', 'GaussianNoise', 'SaltPepperNoise']
 
 class JpegNoise(ImageAugmentor):
     def __init__(self, quality_range=(40, 100)):
@@ -23,7 +23,10 @@ class JpegNoise(ImageAugmentor):
 
 
 class GaussianNoise(ImageAugmentor):
-    def __init__(self, scale=10, clip=True):
+    def __init__(self, sigma=1, clip=True):
+        """
+        Add a gaussian noise N(0, sigma^2) of the same shape to img.
+        """
         super(GaussianNoise, self).__init__()
         self._init(locals())
 
@@ -31,13 +34,16 @@ class GaussianNoise(ImageAugmentor):
         return self.rng.randn(*img.shape)
 
     def _augment(self, img, noise):
-        ret = img + noise
+        ret = img + noise * self.sigma
         if self.clip:
             ret = np.clip(ret, 0, 255)
         return ret
 
 class SaltPepperNoise(ImageAugmentor):
     def __init__(self, white_prob=0.05, black_prob=0.05):
+        """ Salt and pepper noise.
+            Randomly set some elements in img to 0 or 255, regardless of its channels.
+        """
         assert white_prob + black_prob <= 1, "Sum of probabilities cannot be greater than 1"
         super(SaltPepperNoise, self).__init__()
         self._init(locals())

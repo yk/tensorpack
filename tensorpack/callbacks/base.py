@@ -8,9 +8,7 @@ import os
 import time
 from abc import abstractmethod, ABCMeta
 
-from ..utils import *
-
-__all__ = ['Callback', 'PeriodicCallback']
+__all__ = ['Callback', 'PeriodicCallback', 'ProxyCallback']
 
 class Callback(object):
     """ Base class for all callbacks """
@@ -30,7 +28,7 @@ class Callback(object):
         Called before finalizing the graph.
         Use this callback to setup some ops used in the callback.
 
-        :param trainer: a :class:`train.Trainer` instance
+        :param trainer: :class:`train.Trainer` instance
         """
         self.trainer = trainer
         self.graph = tf.get_default_graph()

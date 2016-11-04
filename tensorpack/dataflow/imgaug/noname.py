@@ -44,10 +44,9 @@ class Flip(ImageAugmentor):
     def _fprop_coord(self, coord, param):
         raise NotImplementedError()
 
-
 class Resize(ImageAugmentor):
     """ Resize image to a target size"""
-    def __init__(self, shape):
+    def __init__(self, shape, interp=cv2.INTER_CUBIC):
         """
         :param shape: shape in (h, w)
         """
@@ -56,11 +55,12 @@ class Resize(ImageAugmentor):
     def _augment(self, img, _):
         return cv2.resize(
             img, self.shape[::-1],
-            interpolation=cv2.INTER_CUBIC)
+            interpolation=self.interp)
 
 class RandomResize(ImageAugmentor):
     """ randomly rescale w and h of the image"""
-    def __init__(self, xrange, yrange, minimum=(0,0), aspect_ratio_thres=0.15):
+    def __init__(self, xrange, yrange, minimum=(0,0), aspect_ratio_thres=0.15,
+            interp=cv2.INTER_CUBIC):
         """
         :param xrange: (min, max) scaling ratio
         :param yrange: (min, max) scaling ratio
@@ -85,7 +85,8 @@ class RandomResize(ImageAugmentor):
             cnt += 1
             if cnt > 50:
                 logger.warn("RandomResize failed to augment an image")
+                return img.shape[1], img.shape[0]
 
     def _augment(self, img, dsize):
-        return cv2.resize(img, dsize, interpolation=cv2.INTER_CUBIC)
+        return cv2.resize(img, dsize, interpolation=self.interp)
 

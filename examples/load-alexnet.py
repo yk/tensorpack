@@ -1,7 +1,7 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # -*- coding: UTF-8 -*-
 # File: load-alexnet.py
-# Author: Yuxin Wu <ppwwyyxx@gmail.com>
+# Author: Yuxin Wu <ppwwyyxxc@gmail.com>
 
 import tensorflow as tf
 import numpy as np
@@ -15,39 +15,35 @@ from tensorpack.dataflow.dataset import ILSVRCMeta
 
 """
 Usage:
-    python2 -m tensorpack.utils.loadcaffe PATH/TO/CAFFE/{deploy.prototxt,bvlc_alexnet.caffemodel} alexnet.npy
+    python -m tensorpack.utils.loadcaffe PATH/TO/CAFFE/{deploy.prototxt,bvlc_alexnet.caffemodel} alexnet.npy
     ./load-alexnet.py --load alexnet.npy --input cat.png
 """
 
-BATCH_SIZE = 10
-MIN_AFTER_DEQUEUE = 500
-CAPACITY = MIN_AFTER_DEQUEUE + 3 * BATCH_SIZE
-
 class Model(ModelDesc):
     def _get_input_vars(self):
-        return [InputVar(tf.float32, (None, 227, 227, 3), 'input'),
-            InputVar(tf.int32, (None,), 'label') ]
+        return [InputVar(tf.float32, (None, 227, 227, 3), 'input') ]
 
     def _build_graph(self, inputs):
         # img: 227x227x3
+        image = inputs[0]
 
-        image, label = inputs
+        with argscope([Conv2D, FullyConnected], nl=tf.nn.relu):
+            l = Conv2D('conv1', image, out_channel=96, kernel_shape=11, stride=4, padding='VALID')
+            l = tf.nn.lrn(l, 2, bias=1.0, alpha=2e-5, beta=0.75, name='norm1')
+            l = MaxPooling('pool1', l, 3, stride=2, padding='VALID')
 
-        l = Conv2D('conv1', image, out_channel=96, kernel_shape=11, stride=4, padding='VALID')
-        l = tf.nn.lrn(l, 2, bias=1.0, alpha=2e-5, beta=0.75, name='norm1')
-        l = MaxPooling('pool1', l, 3, stride=2, padding='VALID')
+            l = Conv2D('conv2', l, out_channel=256, kernel_shape=5, split=2)
+            l = tf.nn.lrn(l, 2, bias=1.0, alpha=2e-5, beta=0.75, name='norm2')
+            l = MaxPooling('pool2', l, 3, stride=2, padding='VALID')
 
-        l = Conv2D('conv2', l, out_channel=256, kernel_shape=5, split=2)
-        l = tf.nn.lrn(l, 2, bias=1.0, alpha=2e-5, beta=0.75, name='norm2')
-        l = MaxPooling('pool2', l, 3, stride=2, padding='VALID')
+            l = Conv2D('conv3', l, out_channel=384, kernel_shape=3)
+            l = Conv2D('conv4', l, out_channel=384, kernel_shape=3, split=2)
+            l = Conv2D('conv5', l, out_channel=256, kernel_shape=3, split=2)
+            l = MaxPooling('pool3', l, 3, stride=2, padding='VALID')
 
-        l = Conv2D('conv3', l, out_channel=384, kernel_shape=3)
-        l = Conv2D('conv4', l, out_channel=384, kernel_shape=3, split=2)
-        l = Conv2D('conv5', l, out_channel=256, kernel_shape=3, split=2)
-        l = MaxPooling('pool3', l, 3, stride=2, padding='VALID')
-
-        l = FullyConnected('fc6', l, 4096)
-        l = FullyConnected('fc7', l, out_dim=4096)
+            # This is just a script to load model, so we ignore the dropout layer
+            l = FullyConnected('fc6', l, 4096)
+            l = FullyConnected('fc7', l, out_dim=4096)
         # fc will have activation summary by default. disable this for the output layer
         logits = FullyConnected('fc8', l, out_dim=1000, nl=tf.identity)
         prob = tf.nn.softmax(logits, name='output')
@@ -60,7 +56,7 @@ def run_test(path, input):
         input_var_names=['input'],
         session_init=ParamRestore(param_dict),
         session_config=get_default_sess_config(0.9),
-        output_var_names=['output']   # output:0 is the probability distribution
+        output_var_names=['output']   # the variable 'output' is the probability distribution
     )
     predict_func = get_predict_func(pred_config)
 

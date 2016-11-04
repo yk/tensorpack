@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: UTF-8 -*-
 # File: inception-bn.py
-# Author: Yuxin Wu <ppwwyyxx@gmail.com>
+# Author: Yuxin Wu <ppwwyyxxc@gmail.com>
 
 import cv2
 import argparse
@@ -14,7 +14,9 @@ from tensorpack.tfutils.symbolic_functions import *
 from tensorpack.tfutils.summary import *
 
 
-BATCH_SIZE = 64
+TOTAL_BATCH_SIZE = 64 * 6
+NR_GPU = 6
+BATCH_SIZE = TOTAL_BATCH_SIZE // NR_GPU
 INPUT_SHAPE = 224
 
 """
@@ -57,7 +59,7 @@ class Model(ModelDesc):
                 outs.append(x4)
                 return tf.concat(3, outs, name='concat')
 
-        with argscope(Conv2D, nl=BNReLU(), use_bias=False):
+        with argscope(Conv2D, nl=BNReLU, use_bias=False):
             l = Conv2D('conv0', image, 64, 7, stride=2)
             l = MaxPooling('pool0', l, 3, 2, padding='SAME')
             l = Conv2D('conv1', l, 64, 1)
@@ -69,7 +71,7 @@ class Model(ModelDesc):
             l = inception('incep3c', l, 0, 128, 160, 64, 96, 0, 'max')
 
             br1 = Conv2D('loss1conv', l, 128, 1)
-            br1 = FullyConnected('loss1fc', br1, 1024)
+            br1 = FullyConnected('loss1fc', br1, 1024, nl=tf.nn.relu)
             br1 = FullyConnected('loss1logit', br1, 1000, nl=tf.identity)
             loss1 = tf.nn.sparse_softmax_cross_entropy_with_logits(br1, label)
             loss1 = tf.reduce_mean(loss1, name='loss1')
@@ -82,7 +84,7 @@ class Model(ModelDesc):
             l = inception('incep4e', l, 0, 128, 192, 192, 256, 0, 'max')
 
             br2 = Conv2D('loss2conv', l, 128, 1)
-            br2 = FullyConnected('loss2fc', br2, 1024)
+            br2 = FullyConnected('loss2fc', br2, 1024, nl=tf.nn.relu)
             br2 = FullyConnected('loss2logit', br2, 1000, nl=tf.identity)
             loss2 = tf.nn.sparse_softmax_cross_entropy_with_logits(br2, label)
             loss2 = tf.reduce_mean(loss2, name='loss2')
@@ -152,8 +154,6 @@ def get_config():
     step_per_epoch = 5000
     dataset_val = get_data('val')
 
-    sess_config = get_default_sess_config(0.99)
-
     lr = tf.Variable(0.045, trainable=False, name='learning_rate')
     tf.scalar_summary('learning_rate', lr)
 
@@ -161,8 +161,7 @@ def get_config():
         dataset=dataset_train,
         optimizer=tf.train.MomentumOptimizer(lr, 0.9),
         callbacks=Callbacks([
-            StatPrinter(),
-            ModelSaver(),
+            StatPrinter(), ModelSaver(),
             InferenceRunner(dataset_val, [
                 ClassificationError('wrong-top1', 'val-top1-error'),
                 ClassificationError('wrong-top5', 'val-top5-error')]),
@@ -172,7 +171,7 @@ def get_config():
                                        (19, 3e-3), (24, 1e-3), (26, 2e-4),
                                        (30, 5e-5) ])
         ]),
-        session_config=sess_config,
+        session_config=get_default_sess_config(0.99),
         model=Model(),
         step_per_epoch=step_per_epoch,
         max_epoch=80,

@@ -7,7 +7,7 @@ import numpy as np
 import cv2
 
 __all__ = ['Brightness', 'Contrast', 'MeanVarianceNormalize', 'GaussianBlur',
-        'Gamma', 'Clip']
+        'Gamma', 'Clip', 'Saturation', 'Lighting']
 
 class Brightness(ImageAugmentor):
     """
@@ -111,9 +111,49 @@ class Gamma(ImageAugmentor):
 
 class Clip(ImageAugmentor):
     def __init__(self, min=0, max=255):
-        assert delta > 0
         self._init(locals())
 
     def _augment(self, img, _):
         img = np.clip(img, self.min, self.max)
         return img
+
+class Saturation(ImageAugmentor):
+    def __init__(self, alpha=0.4):
+        """ Saturation, see 'fb.resnet.torch' https://github.com/facebook/fb.resnet.torch/blob/master/datasets/transforms.lua#L218
+        """
+        super(Saturation, self).__init__()
+        assert alpha < 1
+        self._init(locals())
+
+    def _get_augment_params(self, _):
+        return 1 + self._rand_range(-self.alpha, self.alpha)
+
+    def _augment(self, img, v):
+        grey = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        return img * v + (grey * (1 - v))[:,:,np.newaxis]
+
+class Lighting(ImageAugmentor):
+    def __init__(self, std, eigval, eigvec):
+        """ Lighting noise.
+            See `ImageNet Classification with Deep Convolutional Neural Networks - Alex`
+            The implementation follows 'fb.resnet.torch': https://github.com/facebook/fb.resnet.torch/blob/master/datasets/transforms.lua#L184
+
+            :param eigvec: each column is one eigen vector
+        """
+        eigval = np.asarray(eigval)
+        eigvec = np.asarray(eigvec)
+        assert eigval.shape == (3,)
+        assert eigvec.shape == (3,3)
+        self._init(locals())
+
+    def _get_augment_params(self, img):
+        assert img.shape[2] == 3
+        return self.rng.randn(3) * self.std
+
+    def _augment(self, img, v):
+        v = v * self.eigval
+        v = v.reshape((3, 1))
+        inc = np.dot(self.eigvec, v).reshape((3,))
+        img += inc
+        return img
+

@@ -1,7 +1,7 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # -*- coding: UTF-8 -*-
 # File: load-vgg16.py
-# Author: Yuxin Wu <ppwwyyxx@gmail.com>
+# Author: Yuxin Wu <ppwwyyxxc@gmail.com>
 
 import cv2
 import tensorflow as tf
@@ -23,20 +23,19 @@ from tensorpack.dataflow.dataset import ILSVRCMeta
 
 """
 Usage:
-    python2 -m tensorpack.utils.loadcaffe PATH/TO/VGG/{VGG_ILSVRC_16_layers_deploy.prototxt,VGG_ILSVRC_16_layers.caffemodel} vgg16.npy
+    python -m tensorpack.utils.loadcaffe PATH/TO/VGG/{VGG_ILSVRC_16_layers_deploy.prototxt,VGG_ILSVRC_16_layers.caffemodel} vgg16.npy
     ./load-vgg16.py --load vgg16.npy --input cat.png
 """
 
 class Model(ModelDesc):
     def _get_input_vars(self):
-        return [InputVar(tf.float32, (None, 224, 224, 3), 'input'),
-                InputVar(tf.int32, (None,), 'label') ]
+        return [InputVar(tf.float32, (None, 224, 224, 3), 'input') ]
 
-    def _build_graph(self, inputs, is_training):
+    def _build_graph(self, inputs):
 
-        image, label = inputs
+        image = inputs[0]
 
-        with argscope(Conv2D, kernel_shape=3):
+        with argscope(Conv2D, kernel_shape=3, nl=tf.nn.relu):
             # 224
             logits = (LinearWrap(image)
                 .Conv2D('conv1_1', 64)
@@ -62,17 +61,15 @@ class Model(ModelDesc):
                 .Conv2D('conv5_3', 512)
                 .MaxPooling('pool5', 2)
                  # 7
-                .FullyConnected('fc6', 4096)
+                .FullyConnected('fc6', 4096, nl=tf.nn.relu)
                 .Dropout('drop0', 0.5)
-                .print_tensor()
-                .FullyConnected('fc7', 4096)
+                .FullyConnected('fc7', 4096, nl=tf.nn.relu)
                 .Dropout('drop1', 0.5)
                 .FullyConnected('fc8', out_dim=1000, nl=tf.identity)())
         prob = tf.nn.softmax(logits, name='output')
 
 def run_test(path, input):
     param_dict = np.load(path).item()
-
     pred_config = PredictConfig(
         model=Model(),
         input_var_names=['input'],

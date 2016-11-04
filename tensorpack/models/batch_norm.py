@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # -*- coding: UTF-8 -*-
 # File: batch_norm.py
 # Author: Yuxin Wu <ppwwyyxx@gmail.com>
@@ -7,7 +7,7 @@ import tensorflow as tf
 from copy import copy
 import re
 
-from .model_desc import get_current_tower_context
+from ..tfutils.tower import get_current_tower_context
 from ..utils import logger, EXTRA_SAVE_VARS_KEY
 from ._common import layer_register
 
@@ -42,9 +42,10 @@ def BatchNorm(x, use_local_stat=None, decay=0.9, epsilon=1e-5):
 
     n_out = shape[-1]  # channel
     assert n_out is not None
-    beta = tf.get_variable('beta', [n_out])
+    beta = tf.get_variable('beta', [n_out],
+            initializer=tf.zeros_initializer)
     gamma = tf.get_variable('gamma', [n_out],
-        initializer=tf.ones_initializer)
+            initializer=tf.ones_initializer)
 
     if len(shape) == 2:
         batch_mean, batch_var = tf.nn.moments(x, [0], keep_dims=False)

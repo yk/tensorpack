@@ -7,12 +7,13 @@ import tensorflow as tf
 import itertools, re
 from six.moves import zip, range
 
-from ..models import TowerContext
-from ..utils import *
+from ..utils import logger
+from ..utils.naming import *
 from ..utils.concurrency import LoopThread
 from ..tfutils.summary import summary_moving_average
 from ..tfutils.modelutils import describe_model
-from ..tfutils import *
+from ..tfutils import (backup_collection, restore_collection,
+        get_global_step_var, TowerContext)
 
 from .trainer import QueueInputTrainer
 
@@ -31,6 +32,9 @@ class MultiGPUTrainer(QueueInputTrainer):
         with tf.name_scope('AvgGrad'):
             for grad_and_vars in zip(*tower_grads):
                 v = grad_and_vars[0][1]
+                for x in grad_and_vars:
+                    assert x[0] is not None, \
+                            "Gradient w.r.t {} is None!".format(v.name)
                 try:
                     grad = tf.add_n([x[0] for x in grad_and_vars]) / float(len(tower_grads))
                 except:
@@ -44,8 +48,10 @@ class MultiGPUTrainer(QueueInputTrainer):
             len(self.config.tower)))
 
         grad_list = []
+        global_scope = tf.get_variable_scope()
         for idx, t in enumerate(self.config.tower):
             with tf.device('/gpu:{}'.format(t)), \
+                    tf.variable_scope(global_scope, reuse=idx > 0), \
                     TowerContext('tower{}'.format(idx)) as scope:
                 logger.info("Building graph for training tower {}...".format(idx))
                 model_inputs = self._get_model_inputs()    # each tower dequeue from input queue
@@ -60,7 +66,6 @@ class MultiGPUTrainer(QueueInputTrainer):
 
                 if idx == 0:
                     tf.add_to_collection(MOVING_SUMMARY_VARS_KEY, cost_var)
-                    tf.get_variable_scope().reuse_variables()
                     # avoid repeated summary from each device
                     backup = backup_collection(SUMMARY_BACKUP_KEYS)
         restore_collection(backup)

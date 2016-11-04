@@ -6,6 +6,7 @@ import os
 from abc import abstractmethod, ABCMeta
 from collections import defaultdict
 import re
+import numpy as np
 import tensorflow as tf
 import six
 
@@ -15,7 +16,7 @@ from .varmanip import SessionUpdate, get_savename_from_varname
 
 __all__ = ['SessionInit', 'NewSession', 'SaverRestore',
            'ParamRestore', 'ChainInit',
-           'JustCurrentSession']
+           'JustCurrentSession', 'get_model_loader']
 
 # TODO they initialize_all at the beginning by default.
 
@@ -57,6 +58,8 @@ class SaverRestore(SessionInit):
         :param prefix: add a `prefix/` for every variable in this checkpoint
         """
         assert os.path.isfile(model_path)
+        if os.path.basename(model_path) == model_path:
+            model_path = os.path.join('.', model_path)  # avoid #4921
         if os.path.basename(model_path) == 'checkpoint':
             model_path = tf.train.get_checkpoint_state(
                 os.path.dirname(model_path)).model_checkpoint_path
@@ -179,3 +182,14 @@ class ChainInit(SessionInit):
     def _init(self, sess):
         for i in self.inits:
             i.init(sess)
+
+
+def get_model_loader(filename):
+    """
+    Get a corresponding model loader by looking at the file name
+    :return: either a ParamRestore or SaverRestore
+    """
+    if filename.endswith('.npy'):
+        return ParamRestore(np.load(filename, encoding='latin1').item())
+    else:
+        return SaverRestore(filename)

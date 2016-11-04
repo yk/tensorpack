@@ -8,8 +8,13 @@ import time
 from ..utils import logger
 try:
     import gym
+    gym.undo_logger_setup()
+    # https://github.com/openai/gym/pull/199
+    # not sure does it cause other problems
+    __all__ = ['GymEnv']
 except ImportError:
     logger.warn("Cannot import gym. GymEnv won't be available.")
+    __all__ = []
 
 import threading
 
@@ -17,13 +22,12 @@ from ..utils.fs import *
 from ..utils.stat import *
 from .envbase import RLEnvironment, DiscreteActionSpace
 
-__all__ = ['GymEnv']
 
 _ALE_LOCK = threading.Lock()
 
 class GymEnv(RLEnvironment):
     """
-    An OpenAI/gym wrapper. Will auto restart.
+    An OpenAI/gym wrapper. Can optionally auto restart.
     """
     def __init__(self, name, dumpdir=None, viz=False, auto_restart=True):
         with _ALE_LOCK:
@@ -31,6 +35,7 @@ class GymEnv(RLEnvironment):
         if dumpdir:
             mkdir_p(dumpdir)
             self.gymenv.monitor.start(dumpdir)
+        self.use_dir = dumpdir
 
         self.reset_stat()
         self.rwd_counter = StatCounter()
@@ -43,6 +48,8 @@ class GymEnv(RLEnvironment):
         self._ob = self.gymenv.reset()
 
     def finish_episode(self):
+        if self.use_dir is not None:
+            self.gymenv.monitor.flush()
         self.stats['score'].append(self.rwd_counter.sum)
 
     def current_state(self):
@@ -77,4 +84,4 @@ if __name__ == '__main__':
         r, o = env.action(act)
         env.current_state()
         if r != 0 or o:
-            print r, o
+            print(r, o)

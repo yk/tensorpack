@@ -12,11 +12,12 @@ from .imgaug import AugmentorList
 __all__ = ['ImageFromFile', 'AugmentImageComponent', 'AugmentImageComponents']
 
 class ImageFromFile(DataFlow):
-    """ Generate rgb images from list of files """
     def __init__(self, files, channel=3, resize=None):
-        """ :param files: list of file paths
-            :param channel: 1 or 3 channel
-            :param resize: a (h, w) tuple. If given, will force a resize
+        """
+        Generate rgb images from list of files
+        :param files: list of file paths
+        :param channel: 1 or 3 channel
+        :param resize: a (h, w) tuple. If given, will force a resize
         """
         assert len(files)
         self.files = files
@@ -38,16 +39,17 @@ class ImageFromFile(DataFlow):
 
 
 class AugmentImageComponent(MapDataComponent):
-    """
-    Augment the image component of datapoints
-    """
     def __init__(self, ds, augmentors, index=0):
         """
+        Augment the image component of datapoints
         :param ds: a `DataFlow` instance.
         :param augmentors: a list of `ImageAugmentor` instance to be applied in order.
         :param index: the index (or list of indices) of the image component in the produced datapoints by `ds`. default to be 0
         """
-        self.augs = AugmentorList(augmentors)
+        if isinstance(augmentors, AugmentorList):
+            self.augs = augmentors
+        else:
+            self.augs = AugmentorList(augmentors)
         super(AugmentImageComponent, self).__init__(
             ds, lambda x: self.augs.augment(x), index)
 
@@ -57,9 +59,8 @@ class AugmentImageComponent(MapDataComponent):
 
 
 class AugmentImageComponents(MapData):
-    """ Augment a list of images of the same shape, with the same parameters"""
     def __init__(self, ds, augmentors, index=(0,1)):
-        """
+        """ Augment a list of images of the same shape, with the same parameters
         :param ds: a `DataFlow` instance.
         :param augmentors: a list of `ImageAugmentor` instance to be applied in order.
         :param index: tuple of indices of the image components

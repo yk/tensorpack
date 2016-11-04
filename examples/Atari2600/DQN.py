@@ -1,7 +1,7 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 # File: DQN.py
-# Author: Yuxin Wu <ppwwyyxx@gmail.com>
+# Author: Yuxin Wu <ppwwyyxxc@gmail.com>
 
 import numpy as np
 import tensorflow as tf
@@ -40,6 +40,8 @@ EXPLORATION_EPOCH_ANNEAL = 0.01
 END_EXPLORATION = 0.1
 
 MEMORY_SIZE = 1e6
+# NOTE: will consume at least 1e6 * 84 * 84 bytes == 6.6G memory.
+# Suggest using tcmalloc to manage memory space better.
 INIT_MEMORY_SIZE = 5e4
 STEP_PER_EPOCH = 10000
 EVAL_EPISODE = 50
@@ -160,15 +162,14 @@ def get_config():
         dataset=dataset_train,
         optimizer=tf.train.AdamOptimizer(lr, epsilon=1e-3),
         callbacks=Callbacks([
-            StatPrinter(),
-            ModelSaver(),
+            StatPrinter(), ModelSaver(),
             ScheduledHyperParamSetter('learning_rate',
                 [(150, 4e-4), (250, 1e-4), (350, 5e-5)]),
-            HumanHyperParamSetter('learning_rate', 'hyper.txt'),
-            HumanHyperParamSetter(ObjAttrParam(dataset_train, 'exploration'), 'hyper.txt'),
             RunOp(lambda: M.update_target_param()),
             dataset_train,
             PeriodicCallback(Evaluator(EVAL_EPISODE, ['state'], ['fct/output']), 3),
+            #HumanHyperParamSetter('learning_rate', 'hyper.txt'),
+            #HumanHyperParamSetter(ObjAttrParam(dataset_train, 'exploration'), 'hyper.txt'),
         ]),
         # save memory for multiprocess evaluator
         session_config=get_default_sess_config(0.6),

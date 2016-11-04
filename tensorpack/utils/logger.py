@@ -43,6 +43,7 @@ _logger = _getlogger()
 
 def get_time_str():
     return datetime.now().strftime('%m%d-%H%M%S')
+
 # logger file and directory:
 global LOG_FILE, LOG_DIR
 LOG_DIR = None
@@ -55,6 +56,7 @@ def _set_file(path):
         filename=path, encoding='utf-8', mode='w')
     hdl.setFormatter(_MyFormatter(datefmt='%m%d %H:%M:%S'))
     _logger.addHandler(hdl)
+    _logger.info("Argv: " + ' '.join(sys.argv))
 
 def set_logger_dir(dirname, action=None):
     """
@@ -92,19 +94,22 @@ If you're resuming from a previous run you can choose to keep it.""")
     LOG_FILE = os.path.join(dirname, 'log.log')
     _set_file(LOG_FILE)
 
+
+_LOGGING_METHOD = ['info', 'warning', 'error', 'critical', 'warn', 'exception', 'debug']
 # export logger functions
-for func in ['info', 'warning', 'error', 'critical', 'warn', 'exception', 'debug']:
+for func in _LOGGING_METHOD:
     locals()[func] = getattr(_logger, func)
 
 def disable_logger():
     """ disable all logging ability from this moment"""
-    for func in ['info', 'warning', 'error', 'critical', 'warn', 'exception', 'debug']:
+    for func in _LOGGING_METHOD:
         globals()[func] = lambda x: None
 
-def auto_set_dir(action=None, overwrite_setting=False):
+def auto_set_dir(action=None, overwrite=False):
     """ set log directory to a subdir inside 'train_log', with the name being
     the main python file currently running"""
-    if LOG_DIR is not None and not overwrite_setting:
+    if LOG_DIR is not None and not overwrite:
+        # dir already set
         return
     mod = sys.modules['__main__']
     basename = os.path.basename(mod.__file__)

@@ -7,7 +7,7 @@ import os, shutil
 import re
 
 from .base import Callback
-from ..utils import *
+from ..utils import logger
 from ..tfutils.varmanip import get_savename_from_varname
 
 __all__ = ['ModelSaver', 'MinSaver', 'MaxSaver']
@@ -33,10 +33,17 @@ class ModelSaver(Callback):
         for key in self.var_collections:
             vars.extend(tf.get_collection(key))
         self.path = os.path.join(logger.LOG_DIR, 'model')
-        self.saver = tf.train.Saver(
-            var_list=ModelSaver._get_var_dict(vars),
-            max_to_keep=self.keep_recent,
-            keep_checkpoint_every_n_hours=self.keep_freq)
+        try:
+            self.saver = tf.train.Saver(
+                var_list=ModelSaver._get_var_dict(vars),
+                max_to_keep=self.keep_recent,
+                keep_checkpoint_every_n_hours=self.keep_freq,
+                write_version=tf.train.SaverDef.V2)
+        except:
+            self.saver = tf.train.Saver(
+                var_list=ModelSaver._get_var_dict(vars),
+                max_to_keep=self.keep_recent,
+                keep_checkpoint_every_n_hours=self.keep_freq)
         self.meta_graph_written = False
 
     @staticmethod
@@ -47,11 +54,11 @@ class ModelSaver(Callback):
             if name not in var_dict:
                 if name != v.name:
                     logger.info(
-                        "{} renamed to {} when saving model.".format(v.name, name))
+                        "[ModelSaver] {} renamed to {} when saving model.".format(v.name, name))
                 var_dict[name] = v
             else:
-                logger.warn("Variable {} won't be saved \
-because {} will be saved".format(v.name, var_dict[name].name))
+                logger.info("[ModelSaver] Variable {} won't be saved \
+due to an alternative in a different tower".format(v.name, var_dict[name].name))
         return var_dict
 
     def _trigger_epoch(self):

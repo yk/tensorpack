@@ -13,7 +13,5 @@ from tensorpack.callbacks import *
 from tensorpack.dataflow import *
 from tensorpack.predict import *
 
-# __all__ = ["models", "train", "utils", "tfutils", "callbacks", "dataflow"]
-
 if int(numpy.__version__.split('.')[1]) < 9:
     logger.warn("Numpy < 1.9 could be extremely slow on some tasks.")
