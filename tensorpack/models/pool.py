@@ -95,7 +95,7 @@ def FixedUnPooling(x, shape, unpool_mat=None):
     if shape[0] == 2 and shape[1] == 2 and unpool_mat is None:
         return UnPooling2x2ZeroFilled(x)
 
-    input_shape = tf.shape(x)
+    input_shape = x.get_shape().as_list()
     if unpool_mat is None:
         mat = np.zeros(shape, dtype='float32')
         mat[0][0] = 1
