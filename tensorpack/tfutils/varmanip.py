@@ -10,9 +10,10 @@ import re
 import numpy as np
 from ..utils import logger
 from ..utils.naming import *
+from .common import get_op_tensor_name
 
 __all__ = ['SessionUpdate', 'dump_session_params', 'dump_chkpt_vars',
-        'get_savename_from_varname']
+        'get_savename_from_varname', 'is_training_name']
 
 def get_savename_from_varname(
         varname, varname_prefix=None,
@@ -24,7 +25,7 @@ def get_savename_from_varname(
     :returns: the name used to save the variable
     """
     name = varname
-    if 'towerp' in name:
+    if 'towerp/' in name:
         logger.error("No variable should be under 'towerp' name scope".format(v.name))
         # don't overwrite anything in the current prediction graph
         return None
@@ -75,7 +76,9 @@ def dump_session_params(path):
     npy format, loadable by ParamRestore
     """
     var = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)
-    var.extend(tf.get_collection(EXTRA_SAVE_VARS_KEY))
+    var.extend(tf.get_collection(tf.GraphKeys.MODEL_VARIABLES))
+    # TODO dedup
+    assert len(set(var)) == len(var), "TRAINABLE and MODEL variables have duplication!"
     result = {}
     for v in var:
         name = get_savename_from_varname(v.name)
@@ -95,3 +98,25 @@ def dump_chkpt_vars(model_path):
     for n in var_names:
         result[n] = reader.get_tensor(n)
     return result
+
+def is_training_name(name):
+    """
+    This is only used to improve logging.
+    :returns: guess whether this tensor is something only used in training.
+    """
+    # TODO: maybe simply check against TRAINABLE_VARIABLES and MODEL_VARIABLES?
+    # TODO or use get_slot_names()
+    name = get_op_tensor_name(name)[0]
+    if name.endswith('/Adam') or name.endswith('/Adam_1'):
+        return True
+    if name.endswith('/Momentum'):
+        return True
+    if name.endswith('/Adadelta') or name.endswith('/Adadelta_1'):
+        return True
+    if name.endswith('/RMSProp') or name.endswith('/RMSProp_1'):
+        return True
+    if name.endswith('/Adagrad'):
+        return True
+    if 'EMA_summary/' in name:
+        return True
+    return False

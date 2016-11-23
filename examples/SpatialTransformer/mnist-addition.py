@@ -76,7 +76,6 @@ class Model(ModelDesc):
         cost = tf.reduce_mean(cost, name='cross_entropy_loss')
 
         wrong = symbolic_functions.prediction_incorrect(logits, label)
-        nr_wrong = tf.reduce_sum(wrong, name='wrong')
         summary.add_moving_summary(tf.reduce_mean(wrong, name='train_error'))
 
         wd_cost = tf.mul(1e-5, regularize_cost('fc.*/W', tf.nn.l2_loss),
@@ -110,8 +109,8 @@ def view_warp(modelpath):
     pred = OfflinePredictor(PredictConfig(
        session_init=get_model_loader(modelpath),
        model=Model(),
-       input_var_names=['input'],
-       output_var_names=['viz', 'STN1/affine', 'STN2/affine']))
+       input_names=['input'],
+       output_names=['viz', 'STN1/affine', 'STN2/affine']))
 
     xys = np.array([[0, 0, 1],
         [WARP_TARGET_SIZE, 0, 1],
@@ -145,8 +144,7 @@ def get_config():
     dataset_train, dataset_test = get_data(True), get_data(False)
     step_per_epoch = dataset_train.size() * 5
 
-    lr = symbolic_functions.get_scalar_var('learning_rate', 5e-4)
-    tf.scalar_summary('learning_rate', lr)
+    lr = symbf.get_scalar_var('learning_rate', 5e-4, summary=True)
 
     return TrainConfig(
         dataset=dataset_train,
@@ -165,7 +163,7 @@ def get_config():
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--gpu', help='comma separated list of GPU(s) to use.') # nargs='*' in multi mode
+    parser.add_argument('--gpu', help='comma separated list of GPU(s) to use.')
     parser.add_argument('--load', help='load model')
     parser.add_argument('--view', action='store_true')
     args = parser.parse_args()

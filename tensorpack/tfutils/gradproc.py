@@ -12,7 +12,23 @@ from .symbolic_functions import rms
 from .summary import add_moving_summary
 
 __all__ = ['GradientProcessor', 'SummaryGradient', 'CheckGradient',
-           'ScaleGradient', 'MapGradient']
+           'ScaleGradient', 'MapGradient', 'apply_grad_processors']
+
+def apply_grad_processors(grads, gradprocs):
+    """
+    :param grads: list of (grad, var).
+    :param gradprocs: list of `GradientProcessor` instances.
+    :returns: list of (grad, var) went through the processors
+    """
+    g = []
+    for grad, var in grads:
+        if grad is None:
+            logger.warn("No Gradient w.r.t {}".format(var.op.name))
+        else:
+            g.append((grad, var))
+    for proc in gradprocs:
+        g = proc.process(g)
+    return g
 
 class GradientProcessor(object):
     __metaclass__ = ABCMeta
@@ -91,20 +107,24 @@ class CheckGradient(MapGradient):
         super(CheckGradient, self).__init__(self._mapper)
 
     def _mapper(self, grad, var):
-        # this is very slow...
+        # this is very slow.... see #3649
         #op = tf.Assert(tf.reduce_all(tf.is_finite(var)), [var], summarize=100)
-        grad = tf.check_numerics(grad, 'CheckGradient')
+        grad = tf.check_numerics(grad, 'CheckGradient-' + var.op.name)
         return grad
 
 class ScaleGradient(MapGradient):
     """
-    Scale gradient by a multiplier
+    Scale certain gradient by a multiplier
     """
-    def __init__(self, multipliers):
+    def __init__(self, multipliers, log=True):
         """
         :param multipliers: list of (regex, float)
+        :param log: whether to do logging or not
         """
+        if not isinstance(multipliers, list):
+            multipliers = [multipliers]
         self.multipliers = multipliers
+        self._log = log
         super(ScaleGradient, self).__init__(self._mapper)
 
     def _mapper(self, grad, var):
@@ -115,7 +135,8 @@ class ScaleGradient(MapGradient):
                 regex = regex + '$'
 
             if re.match(regex, varname):
-                logger.info("Apply lr multiplier {} for {}".format(val, varname))
+                if self._log:
+                    logger.info("Apply lr multiplier {} for {}".format(val, varname))
                 if val != 0:    # skip zero to speed up
                     return grad * val
                 else:

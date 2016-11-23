@@ -57,6 +57,8 @@ class Callbacks(Callback):
                 cbs.remove(sp)
                 cbs.append(sp)
                 break
+        else:
+            raise ValueError("Callbacks must contain StatPrinter for stat and writer to work properly!")
 
         self.cbs = cbs
 
@@ -86,3 +88,7 @@ class Callbacks(Callback):
             with tm.timed_callback(display_name):
                 cb.trigger_epoch()
         tm.log()
+
+    def append(self, cb):
+        assert isinstance(cb, Callback)
+        self.cbs.append(cb)

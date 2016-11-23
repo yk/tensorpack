@@ -10,9 +10,9 @@ import numpy as np
 import tensorflow as tf
 import six
 
-from ..utils import logger, EXTRA_SAVE_VARS_KEY
+from ..utils import logger
 from .common import get_op_var_name
-from .varmanip import SessionUpdate, get_savename_from_varname
+from .varmanip import SessionUpdate, get_savename_from_varname, is_training_name
 
 __all__ = ['SessionInit', 'NewSession', 'SaverRestore',
            'ParamRestore', 'ChainInit',
@@ -54,28 +54,30 @@ class SaverRestore(SessionInit):
     """
     def __init__(self, model_path, prefix=None):
         """
-        :param model_path: a model file or a ``checkpoint`` file.
+        :param model_path: a model name (model-xxxx) or a ``checkpoint`` file.
         :param prefix: add a `prefix/` for every variable in this checkpoint
         """
-        assert os.path.isfile(model_path)
         if os.path.basename(model_path) == model_path:
             model_path = os.path.join('.', model_path)  # avoid #4921
         if os.path.basename(model_path) == 'checkpoint':
-            model_path = tf.train.get_checkpoint_state(
-                os.path.dirname(model_path)).model_checkpoint_path
-            assert os.path.isfile(model_path)
+            model_path = tf.train.latest_checkpoint(os.path.dirname(model_path))
+            # to be consistent with either v1 or v2
+        assert os.path.isfile(model_path) or os.path.isfile(model_path + '.index'), model_path
         self.set_path(model_path)
         self.prefix = prefix
 
     def _init(self, sess):
         logger.info(
-            "Restoring checkpoint from {}.".format(self.path))
+            "Restoring checkpoint from {} ...".format(self.path))
         chkpt_vars = SaverRestore._read_checkpoint_vars(self.path)
         vars_map = self._get_vars_to_restore_multimap(chkpt_vars)
         for dic in SaverRestore._produce_restore_dict(vars_map):
             # multiple saver under same name scope would cause error:
             # training/saver.py: assert restore_op.name.endswith("restore_all"), restore_op.name
-            saver = tf.train.Saver(var_list=dic, name=str(id(dic)))
+            try:
+                saver = tf.train.Saver(var_list=dic, name=str(id(dic)), write_version=2)
+            except:
+                saver = tf.train.Saver(var_list=dic, name=str(id(dic)))
             saver.restore(sess, self.path)
 
     def set_path(self, model_path):
@@ -127,11 +129,13 @@ class SaverRestore(SessionInit):
                     var_dict[name].append(v)
                     chkpt_vars_used.add(name)
             else:
-                logger.warn("Variable {} in the graph not found in checkpoint!".format(v.op.name))
+                if not is_training_name(v.op.name):
+                    logger.warn("Variable {} in the graph not found in checkpoint!".format(v.op.name))
         if len(chkpt_vars_used) < len(vars_available):
             unused = vars_available - chkpt_vars_used
             for name in unused:
-                logger.warn("Variable {} in checkpoint not found in the graph!".format(name))
+                if not is_training_name(name):
+                    logger.warn("Variable {} in checkpoint not found in the graph!".format(name))
         return var_dict
 
 class ParamRestore(SessionInit):
@@ -156,7 +160,8 @@ class ParamRestore(SessionInit):
         logger.info("Params to restore: {}".format(
             ', '.join(map(str, intersect))))
         for k in variable_names - param_names:
-            logger.warn("Variable {} in the graph not found in the dict!".format(k))
+            if not is_training_name(k):
+                logger.warn("Variable {} in the graph not found in the dict!".format(k))
         for k in param_names - variable_names:
             logger.warn("Variable {} in the dict not found in the graph!".format(k))
 

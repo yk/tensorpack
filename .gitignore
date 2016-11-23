@@ -74,3 +74,4 @@ model-*
 checkpoint
 *.json
 *.prototxt
+snippet

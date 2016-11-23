@@ -6,7 +6,7 @@ import tensorflow as tf
 import re
 
 from ..utils import logger
-from ..utils.utils import memoized
+from ..utils.argtools import memoized
 from ..tfutils.tower import get_current_tower_context
 from ._common import layer_register
 
@@ -40,8 +40,12 @@ def regularize_cost(regex, func, name=None):
 
 
 @layer_register(log_shape=False)
-def Dropout(x, prob=0.5):
-    is_training = get_current_tower_context().is_training
-    keep_prob = tf.constant(prob if is_training else 1.0)
+def Dropout(x, keep_prob=0.5, is_training=None):
+    """
+    :param is_training: if None, will use the current context by default.
+    """
+    if is_training is None:
+        is_training = get_current_tower_context().is_training
+    keep_prob = tf.constant(keep_prob if is_training else 1.0)
     return tf.nn.dropout(x, keep_prob)
 

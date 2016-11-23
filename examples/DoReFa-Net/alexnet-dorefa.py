@@ -38,7 +38,7 @@ Accuracy:
     With (W,A,G)=(1,2,4), 63% error.
 
 Speed:
-    About 3.5 iteration/s on 4 Tesla M40. (Each epoch is set to 10000 iterations)
+    About 2.8 iteration/s on 1 TitanX. (Each epoch is set to 10000 iterations)
 
 To Train:
     ./alexnet-dorefa.py --dorefa 1,2,6 --data PATH --gpu 0,1,2,3
@@ -65,7 +65,8 @@ To Run Pretrained Model:
 BITW = 1
 BITA = 2
 BITG = 6
-BATCH_SIZE = 32
+TOTAL_BATCH_SIZE = 128
+BATCH_SIZE = 64
 
 class Model(ModelDesc):
     def _get_input_vars(self):
@@ -142,11 +143,9 @@ class Model(ModelDesc):
         cost = tf.nn.sparse_softmax_cross_entropy_with_logits(logits, label)
         cost = tf.reduce_mean(cost, name='cross_entropy_loss')
 
-        wrong = prediction_incorrect(logits, label, 1)
-        nr_wrong = tf.reduce_sum(wrong, name='wrong-top1')
+        wrong = prediction_incorrect(logits, label, 1, name='wrong-top1')
         add_moving_summary(tf.reduce_mean(wrong, name='train-error-top1'))
-        wrong = prediction_incorrect(logits, label, 5)
-        nr_wrong = tf.reduce_sum(wrong, name='wrong-top5')
+        wrong = prediction_incorrect(logits, label, 5, name='wrong-top5')
         add_moving_summary(tf.reduce_mean(wrong, name='train-error-top5'))
 
         # weight decay on all W of fc layers
@@ -221,8 +220,7 @@ def get_config():
     data_train = get_data('train')
     data_test = get_data('val')
 
-    lr = tf.Variable(1e-4, trainable=False, name='learning_rate')
-    tf.scalar_summary('learning_rate', lr)
+    lr = get_scalar_var('learning_rate', 1e-4, summary=True)
 
     return TrainConfig(
         dataset=data_train,
@@ -235,7 +233,7 @@ def get_config():
             InferenceRunner(data_test,
                 [ScalarStats('cost'),
                  ClassificationError('wrong-top1', 'val-error-top1'),
-                 ClassificationError('wrong-top5', 'val-error-top1')])
+                 ClassificationError('wrong-top5', 'val-error-top5')])
         ]),
         model=Model(),
         step_per_epoch=10000,
@@ -247,8 +245,8 @@ def run_image(model, sess_init, inputs):
         model=model,
         session_init=sess_init,
         session_config=get_default_sess_config(0.9),
-        input_var_names=['input'],
-        output_var_names=['output']
+        input_names=['input'],
+        output_names=['output']
     )
     predict_func = get_predict_func(pred_config)
     meta = dataset.ILSVRCMeta()
@@ -301,6 +299,10 @@ if __name__ == '__main__':
         assert args.load.endswith('.npy')
         run_image(Model(), ParamRestore(np.load(args.load, encoding='latin1').item()), args.run)
         sys.exit()
+
+    assert args.gpu is not None, "Need to specify a list of gpu for training!"
+    NR_GPU = len(args.gpu.split(','))
+    BATCH_SIZE = TOTAL_BATCH_SIZE // NR_GPU
 
     config = get_config()
     if args.load:

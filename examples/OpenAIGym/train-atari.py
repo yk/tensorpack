@@ -188,9 +188,7 @@ def get_config():
     master = MySimulatorMaster(namec2s, names2c, M)
     dataflow = BatchData(DataFromQueue(master.queue), BATCH_SIZE)
 
-    lr = tf.Variable(0.001, trainable=False, name='learning_rate')
-    tf.scalar_summary('learning_rate', lr)
-
+    lr = symbf.get_scalar_var('learning_rate', 0.001, summary=True)
     return TrainConfig(
         dataset=dataflow,
         optimizer=tf.train.AdamOptimizer(lr, epsilon=1e-3),
@@ -200,13 +198,10 @@ def get_config():
             ScheduledHyperParamSetter('entropy_beta', [(80, 0.005)]),
             ScheduledHyperParamSetter('explore_factor',
                 [(80, 2), (100, 3), (120, 4), (140, 5)]),
-            HumanHyperParamSetter('learning_rate'),
-            HumanHyperParamSetter('entropy_beta'),
-            HumanHyperParamSetter('explore_factor'),
             master,
+            StartProcOrThread(master),
             PeriodicCallback(Evaluator(EVAL_EPISODE, ['state'], ['logits']), 2),
         ]),
-        extra_threads_procs=[master],
         session_config=get_default_sess_config(0.5),
         model=M,
         step_per_epoch=STEP_PER_EPOCH,
@@ -215,7 +210,7 @@ def get_config():
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--gpu', help='comma separated list of GPU(s) to use.') # nargs='*' in multi mode
+    parser.add_argument('--gpu', help='comma separated list of GPU(s) to use.')
     parser.add_argument('--load', help='load model')
     parser.add_argument('--env', help='env', required=True)
     parser.add_argument('--task', help='task to perform',
@@ -235,23 +230,30 @@ if __name__ == '__main__':
         cfg = PredictConfig(
                 model=Model(),
                 session_init=SaverRestore(args.load),
-                input_var_names=['state'],
-                output_var_names=['logits'])
+                input_names=['state'],
+                output_names=['logits'])
         if args.task == 'play':
             play_model(cfg)
         elif args.task == 'eval':
             eval_model_multithread(cfg, EVAL_EPISODE)
     else:
-        nr_gpu = get_nr_gpu()
-        if nr_gpu > 1:
-            predict_tower = range(nr_gpu)[-nr_gpu/2:]
+        if args.gpu:
+            nr_gpu = get_nr_gpu()
+            if nr_gpu > 1:
+                predict_tower = range(nr_gpu)[-nr_gpu/2:]
+            else:
+                predict_tower = [0]
+            PREDICTOR_THREAD = len(predict_tower) * PREDICTOR_THREAD_PER_GPU
+            train_tower = range(nr_gpu)[:-nr_gpu/2] or [0]
+            logger.info("[BA3C] Train on gpu {} and infer on gpu {}".format(
+                ','.join(map(str, train_tower)), ','.join(map(str, predict_tower))))
         else:
+            nr_gpu = 0
+            PREDICTOR_THREAD = 1
             predict_tower = [0]
-        PREDICTOR_THREAD = len(predict_tower) * PREDICTOR_THREAD_PER_GPU
+            train_tower = [0]
         config = get_config()
         if args.load:
             config.session_init = SaverRestore(args.load)
-        config.tower = range(nr_gpu)[:-nr_gpu/2] or [0]
-        logger.info("[BA3C] Train on gpu {} and infer on gpu {}".format(
-            ','.join(map(str, config.tower)), ','.join(map(str, predict_tower))))
+        config.tower = train_tower
         AsyncMultiGPUTrainer(config, predict_tower=predict_tower).train()

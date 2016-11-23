@@ -22,7 +22,7 @@ Identity Mappings in Deep Residual Networks, arxiv:1603.05027
 
 I can reproduce the results on 2 TitanX for
 n=5, about 7.1% val error after 67k steps (8.6 step/s)
-n=18, about 5.8% val error after 80k steps (2.6 step/s)
+n=18, about 5.9% val error after 80k steps (2.6 step/s)
 n=30: a 182-layer network, about 5.6% val error after 51k steps (1.55 step/s)
 This model uses the whole training set instead of a train-val split.
 """
@@ -54,16 +54,9 @@ class Model(ModelDesc):
                 stride1 = 1
 
             with tf.variable_scope(name) as scope:
-                if not first:
-                    b1 = BatchNorm('bn1', l)
-                    b1 = tf.nn.relu(b1)
-                else:
-                    b1 = l
-                c1 = Conv2D('conv1', b1, out_channel, stride=stride1)
-                b2 = BatchNorm('bn2', c1)
-                b2 = tf.nn.relu(b2)
-                c2 = Conv2D('conv2', b2, out_channel)
-
+                b1 = l if first else BNReLU(l)
+                c1 = Conv2D('conv1', b1, out_channel, stride=stride1, nl=BNReLU)
+                c2 = Conv2D('conv2', c1, out_channel)
                 if increase_dim:
                     l = AvgPooling('pool', l, 2)
                     l = tf.pad(l, [[0,0], [0,0], [0,0], [in_channel//2, in_channel//2]])
@@ -73,9 +66,7 @@ class Model(ModelDesc):
 
         with argscope(Conv2D, nl=tf.identity, use_bias=False, kernel_shape=3,
                     W_init=variance_scaling_initializer(mode='FAN_OUT')):
-            l = Conv2D('conv0', image, 16)
-            l = BatchNorm('bn0', l)
-            l = tf.nn.relu(l)
+            l = Conv2D('conv0', image, 16, nl=BNReLU)
             l = residual('res1.0', l, first=True)
             for k in range(1, self.n):
                 l = residual('res1.{}'.format(k), l)
@@ -89,8 +80,7 @@ class Model(ModelDesc):
             l = residual('res3.0', l, increase_dim=True)
             for k in range(1, self.n):
                 l = residual('res3.' + str(k), l)
-            l = BatchNorm('bnlast', l)
-            l = tf.nn.relu(l)
+            l = BNReLU('bnlast', l)
             # 8,c=64
             l = GlobalAvgPooling('gap', l)
 
@@ -101,7 +91,6 @@ class Model(ModelDesc):
         cost = tf.reduce_mean(cost, name='cross_entropy_loss')
 
         wrong = prediction_incorrect(logits, label)
-        nr_wrong = tf.reduce_sum(wrong, name='wrong')
         # monitor training error
         add_moving_summary(tf.reduce_mean(wrong, name='train_error'))
 
@@ -143,9 +132,7 @@ def get_config():
     step_per_epoch = dataset_train.size()
     dataset_test = get_data('test')
 
-    lr = tf.Variable(0.01, trainable=False, name='learning_rate')
-    tf.scalar_summary('learning_rate', lr)
-
+    lr = get_scalar_var('learning_rate', 0.01, summary=True)
     return TrainConfig(
         dataset=dataset_train,
         optimizer=tf.train.MomentumOptimizer(lr, 0.9),
@@ -156,7 +143,6 @@ def get_config():
             ScheduledHyperParamSetter('learning_rate',
                                       [(1, 0.1), (82, 0.01), (123, 0.001), (300, 0.0002)])
         ]),
-        session_config=get_default_sess_config(0.9),
         model=Model(n=18),
         step_per_epoch=step_per_epoch,
         max_epoch=400,
@@ -164,7 +150,7 @@ def get_config():
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--gpu', help='comma separated list of GPU(s) to use.') # nargs='*' in multi mode
+    parser.add_argument('--gpu', help='comma separated list of GPU(s) to use.')
     parser.add_argument('--load', help='load model')
     args = parser.parse_args()
 

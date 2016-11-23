@@ -27,9 +27,6 @@ BATCH_SIZE = 64
 IMAGE_SIZE = (84, 84)
 FRAME_HISTORY = 4
 ACTION_REPEAT = 4
-HEIGHT_RANGE = (None, None)
-#HEIGHT_RANGE = (36, 204)    # for breakout
-#HEIGHT_RANGE = (28, -8)   # for pong
 
 CHANNEL = FRAME_HISTORY
 IMAGE_SHAPE3 = IMAGE_SIZE + (CHANNEL,)
@@ -48,11 +45,11 @@ EVAL_EPISODE = 50
 
 NUM_ACTIONS = None
 ROM_FILE = None
+METHOD = None
 
 def get_player(viz=False, train=False):
-    pl = AtariPlayer(ROM_FILE, height_range=HEIGHT_RANGE,
-            frame_skip=ACTION_REPEAT, image_shape=IMAGE_SIZE[::-1], viz=viz,
-            live_lost_as_eoe=train)
+    pl = AtariPlayer(ROM_FILE, frame_skip=ACTION_REPEAT,
+            image_shape=IMAGE_SIZE[::-1], viz=viz, live_lost_as_eoe=train)
     global NUM_ACTIONS
     NUM_ACTIONS = pl.get_action_space().num_actions()
     if not train:
@@ -75,8 +72,9 @@ class Model(ModelDesc):
     def _get_DQN_prediction(self, image):
         """ image: [0,255]"""
         image = image / 255.0
-        with argscope(Conv2D, nl=PReLU.f, use_bias=True):
-            return (LinearWrap(image)
+        with argscope(Conv2D, nl=PReLU.f, use_bias=True), \
+                argscope(LeakyReLU, alpha=0.01):
+            l = (LinearWrap(image)
                 .Conv2D('conv0', out_channel=32, kernel_shape=5)
                 .MaxPooling('pool0', 2)
                 .Conv2D('conv1', out_channel=32, kernel_shape=5)
@@ -90,8 +88,14 @@ class Model(ModelDesc):
                 #.Conv2D('conv1', out_channel=64, kernel_shape=4, stride=2)
                 #.Conv2D('conv2', out_channel=64, kernel_shape=3)
 
-                .FullyConnected('fc0', 512, nl=lambda x, name: LeakyReLU.f(x, 0.01, name))
-                .FullyConnected('fct', NUM_ACTIONS, nl=tf.identity)())
+                .FullyConnected('fc0', 512, nl=LeakyReLU)())
+        if METHOD != 'Dueling':
+            Q = FullyConnected('fct', l, NUM_ACTIONS, nl=tf.identity)
+        else:
+            V = FullyConnected('fctV', l, 1, nl=tf.identity)
+            As = FullyConnected('fctA', l, NUM_ACTIONS, nl=tf.identity)
+            Q = tf.add(As, V - tf.reduce_mean(As, 1, keep_dims=True))
+        return tf.identity(Q, name='Qvalue')
 
     def _build_graph(self, inputs):
         state, action, reward, next_state, isOver = inputs
@@ -105,22 +109,23 @@ class Model(ModelDesc):
         with tf.variable_scope('target'):
             targetQ_predict_value = self._get_DQN_prediction(next_state)    # NxA
 
-        # DQN
-        #best_v = tf.reduce_max(targetQ_predict_value, 1)    # N,
-
-        # Double-DQN
-        tf.get_variable_scope().reuse_variables()
-        next_predict_value = self._get_DQN_prediction(next_state)
-        self.greedy_choice = tf.argmax(next_predict_value, 1)   # N,
-        predict_onehot = tf.one_hot(self.greedy_choice, NUM_ACTIONS, 1.0, 0.0)
-        best_v = tf.reduce_sum(targetQ_predict_value * predict_onehot, 1)
+        if METHOD != 'Double':
+            # DQN
+            best_v = tf.reduce_max(targetQ_predict_value, 1)    # N,
+        else:
+            # Double-DQN
+            tf.get_variable_scope().reuse_variables()
+            next_predict_value = self._get_DQN_prediction(next_state)
+            self.greedy_choice = tf.argmax(next_predict_value, 1)   # N,
+            predict_onehot = tf.one_hot(self.greedy_choice, NUM_ACTIONS, 1.0, 0.0)
+            best_v = tf.reduce_sum(targetQ_predict_value * predict_onehot, 1)
 
         target = reward + (1.0 - tf.cast(isOver, tf.float32)) * GAMMA * tf.stop_gradient(best_v)
 
-        cost = symbf.huber_loss(target - pred_action_value)
+        self.cost = tf.truediv(symbf.huber_loss(target - pred_action_value),
+                               tf.cast(BATCH_SIZE, tf.float32), name='cost')
         summary.add_param_summary([('conv.*/W', ['histogram', 'rms']),
                                    ('fc.*/W', ['histogram', 'rms']) ])   # monitor all W
-        self.cost = tf.reduce_mean(cost, name='cost')
 
     def update_target_param(self):
         vars = tf.trainable_variables()
@@ -134,8 +139,7 @@ class Model(ModelDesc):
         return tf.group(*ops, name='update_target_network')
 
     def get_gradient_processor(self):
-        return [MapGradient(lambda grad: \
-                tf.clip_by_global_norm([grad], 5)[0][0]),
+        return [MapGradient(lambda grad: tf.clip_by_global_norm([grad], 5)[0][0]),
                 SummaryGradient()]
 
 def get_config():
@@ -143,7 +147,7 @@ def get_config():
 
     M = Model()
     dataset_train = ExpReplay(
-            predictor_io_names=(['state'], ['fct/output']),
+            predictor_io_names=(['state'], ['Qvalue']),
             player=get_player(train=True),
             batch_size=BATCH_SIZE,
             memory_size=MEMORY_SIZE,
@@ -155,8 +159,7 @@ def get_config():
             reward_clip=(-1, 1),
             history_len=FRAME_HISTORY)
 
-    lr = tf.Variable(0.001, trainable=False, name='learning_rate')
-    tf.scalar_summary('learning_rate', lr)
+    lr = symbf.get_scalar_var('learning_rate', 1e-3, summary=True)
 
     return TrainConfig(
         dataset=dataset_train,
@@ -167,7 +170,7 @@ def get_config():
                 [(150, 4e-4), (250, 1e-4), (350, 5e-5)]),
             RunOp(lambda: M.update_target_param()),
             dataset_train,
-            PeriodicCallback(Evaluator(EVAL_EPISODE, ['state'], ['fct/output']), 3),
+            PeriodicCallback(Evaluator(EVAL_EPISODE, ['state'], ['Qvalue']), 3),
             #HumanHyperParamSetter('learning_rate', 'hyper.txt'),
             #HumanHyperParamSetter(ObjAttrParam(dataset_train, 'exploration'), 'hyper.txt'),
         ]),
@@ -179,11 +182,13 @@ def get_config():
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--gpu', help='comma separated list of GPU(s) to use.') # nargs='*' in multi mode
+    parser.add_argument('--gpu', help='comma separated list of GPU(s) to use.')
     parser.add_argument('--load', help='load model')
     parser.add_argument('--task', help='task to perform',
             choices=['play', 'eval', 'train'], default='train')
     parser.add_argument('--rom', help='atari rom', required=True)
+    parser.add_argument('--algo', help='algorithm',
+            choices=['DQN', 'Double', 'Dueling'], default='Double')
     args = parser.parse_args()
 
     if args.gpu:
@@ -191,13 +196,14 @@ if __name__ == '__main__':
     if args.task != 'train':
         assert args.load is not None
     ROM_FILE = args.rom
+    METHOD = args.algo
 
     if args.task != 'train':
         cfg = PredictConfig(
                 model=Model(),
                 session_init=SaverRestore(args.load),
-                input_var_names=['state'],
-                output_var_names=['fct/output:0'])
+                input_names=['state'],
+                output_names=['Qvalue'])
         if args.task == 'play':
             play_model(cfg)
         elif args.task == 'eval':

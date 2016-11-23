@@ -64,18 +64,19 @@ class Model(ModelDesc):
 def run_submission(cfg, output, nr):
     player = get_player(dumpdir=output)
     predfunc = get_predict_func(cfg)
+    logger.info("Start evaluation: ")
     for k in range(nr):
         if k != 0:
             player.restart_episode()
         score = play_one_episode(player, predfunc)
-        print("Total:", score)
+        print("Score:", score)
 
 def do_submit(output):
     gym.upload(output, api_key='xxx')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--gpu', help='comma separated list of GPU(s) to use.') # nargs='*' in multi mode
+    parser.add_argument('--gpu', help='comma separated list of GPU(s) to use.')
     parser.add_argument('--load', help='load model', required=True)
     parser.add_argument('--env', help='environment name', required=True)
     parser.add_argument('--episode', help='number of episodes to run',
@@ -94,6 +95,6 @@ if __name__ == '__main__':
     cfg = PredictConfig(
             model=Model(),
             session_init=SaverRestore(args.load),
-            input_var_names=['state'],
-            output_var_names=['logits'])
+            input_names=['state'],
+            output_names=['logits'])
     run_submission(cfg, args.output, args.episode)

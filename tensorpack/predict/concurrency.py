@@ -45,9 +45,10 @@ class MultiProcessPredictWorker(multiprocessing.Process):
         if self.idx != 0:
             from tensorpack.models._common import disable_layer_logging
             disable_layer_logging()
-        self.func = OfflinePredictor(self.config)
+        self.predictor = OfflinePredictor(self.config)
         if self.idx == 0:
-            describe_model()
+            with self.predictor.graph.as_default():
+                describe_model()
 
 class MultiProcessQueuePredictWorker(MultiProcessPredictWorker):
     """ An offline predictor worker that takes input and produces output by queue"""
@@ -59,8 +60,8 @@ class MultiProcessQueuePredictWorker(MultiProcessPredictWorker):
         super(MultiProcessQueuePredictWorker, self).__init__(idx, config)
         self.inqueue = inqueue
         self.outqueue = outqueue
-        assert isinstance(self.inqueue, multiprocessing.Queue)
-        assert isinstance(self.outqueue, multiprocessing.Queue)
+        assert isinstance(self.inqueue, multiprocessing.queues.Queue)
+        assert isinstance(self.outqueue, multiprocessing.queues.Queue)
 
     def run(self):
         self._init_runtime()
@@ -70,7 +71,7 @@ class MultiProcessQueuePredictWorker(MultiProcessPredictWorker):
                 self.outqueue.put((DIE, None))
                 return
             else:
-                self.outqueue.put((tid, self.func(dp)))
+                self.outqueue.put((tid, self.predictor(dp)))
 
 
 class PredictorWorkerThread(threading.Thread):

@@ -10,6 +10,7 @@ import os
 from tensorpack import *
 import tensorpack.tfutils.symbolic_functions as symbf
 from tensorpack.tfutils.summary import *
+from tensorpack.utils.gpu import get_nr_gpu
 
 """
 A small convnet model for Cifar10 or Cifar100 dataset.
@@ -58,9 +59,7 @@ class Model(ModelDesc):
         cost = tf.nn.sparse_softmax_cross_entropy_with_logits(logits, label)
         cost = tf.reduce_mean(cost, name='cross_entropy_loss')
 
-        # compute the number of failed samples, for ClassificationError to use at test time
         wrong = symbf.prediction_incorrect(logits, label)
-        nr_wrong = tf.reduce_sum(wrong, name='wrong')
         # monitor training error
         add_moving_summary(tf.reduce_mean(wrong, name='train_error'))
 
@@ -111,9 +110,7 @@ def get_config(cifar_classnum):
 
     sess_config = get_default_sess_config(0.5)
 
-    lr = tf.Variable(1e-2, name='learning_rate',
-            dtype=tf.float32, trainable=False)
-    tf.scalar_summary('learning_rate', lr)
+    lr = symbf.get_scalar_var('learning_rate', 1e-2, summary=True)
     def lr_func(lr):
         if lr < 3e-5:
             raise StopTraining()
@@ -136,7 +133,7 @@ def get_config(cifar_classnum):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--gpu', help='comma separated list of GPU(s) to use.') # nargs='*' in multi mode
+    parser.add_argument('--gpu', help='comma separated list of GPU(s) to use.')
     parser.add_argument('--load', help='load model')
     parser.add_argument('--classnum', help='10 for cifar10 or 100 for cifar100',
                         type=int, default=10)
@@ -152,7 +149,10 @@ if __name__ == '__main__':
         if args.load:
             config.session_init = SaverRestore(args.load)
 
-        QueueInputTrainer(config).train()
-        #if args.gpu:
-            #config.nr_tower = len(args.gpu.split(','))
-        #AsyncMultiGPUTrainer(config).train()
+        if args.gpu:
+            config.nr_tower = len(args.gpu.split(','))
+        nr_gpu = get_nr_gpu()
+        if nr_gpu == 1:
+            QueueInputTrainer(config).train()
+        else:
+            SyncMultiGPUTrainer(config).train()

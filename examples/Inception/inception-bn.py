@@ -102,12 +102,10 @@ class Model(ModelDesc):
         cost = tf.add_n([loss3, 0.3 * loss2, 0.3 * loss1], name='weighted_cost')
         add_moving_summary([cost, loss1, loss2, loss3])
 
-        wrong = prediction_incorrect(logits, label, 1)
-        nr_wrong = tf.reduce_sum(wrong, name='wrong-top1')
+        wrong = prediction_incorrect(logits, label, 1, name='wrong-top1')
         add_moving_summary(tf.reduce_mean(wrong, name='train_error_top1'))
 
-        wrong = prediction_incorrect(logits, label, 5)
-        nr_wrong = tf.reduce_sum(wrong, name='wrong-top5')
+        wrong = prediction_incorrect(logits, label, 5, name='wrong-top5')
         add_moving_summary(tf.reduce_mean(wrong, name='train_error_top5'))
 
         # weight decay on all W of fc layers
@@ -126,6 +124,7 @@ def get_data(train_or_test):
     pp_mean = meta.get_per_pixel_mean()
 
     if isTrain:
+        # TODO use the augmentor in GoogleNet
         augmentors = [
             imgaug.Resize((256, 256)),
             imgaug.Brightness(30, False),
@@ -154,9 +153,7 @@ def get_config():
     step_per_epoch = 5000
     dataset_val = get_data('val')
 
-    lr = tf.Variable(0.045, trainable=False, name='learning_rate')
-    tf.scalar_summary('learning_rate', lr)
-
+    lr = get_scalar_var('learning_rate', 0.045, summary=True)
     return TrainConfig(
         dataset=dataset_train,
         optimizer=tf.train.MomentumOptimizer(lr, 0.9),
@@ -179,7 +176,7 @@ def get_config():
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--gpu', help='comma separated list of GPU(s) to use.') # nargs='*' in multi mode
+    parser.add_argument('--gpu', help='comma separated list of GPU(s) to use.')
     parser.add_argument('--load', help='load model')
     parser.add_argument('--data', help='ImageNet data root directory', required=True)
     args = parser.parse_args()

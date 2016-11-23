@@ -10,6 +10,8 @@ Reproduce the following reinforcement learning methods:
 + Double-DQN in:
 [Deep Reinforcement Learning with Double Q-learning](http://arxiv.org/abs/1509.06461)
 
++ Dueling-DQN in: [Dueling Network Architectures for Deep Reinforcement Learning](https://arxiv.org/abs/1511.06581)
+
 + A3C in [Asynchronous Methods for Deep Reinforcement Learning](http://arxiv.org/abs/1602.01783). (I
 used a modified version where each batch contains transitions from different simulators, which I called "Batch-A3C".)
 
@@ -27,12 +29,13 @@ D-DQN is faster at the beginning but will converge to 12it/s due of exploration 
 
 ## How to use
 
-Download [atari roms](https://github.com/openai/atari-py/tree/master/atari_py/atari_roms) to
-`$TENSORPACK_DATASET/atari_rom` (defaults to tensorpack/dataflow/dataset/atari_rom).
+Download an [atari rom](https://github.com/openai/atari-py/tree/master/atari_py/atari_roms) to
+`$TENSORPACK_DATASET/atari_rom/` (defaults to tensorpack/dataflow/dataset/atari_rom/).
 
 To train:
 ```
-./DQN.py --rom breakout.bin --gpu 0
+./DQN.py --rom breakout.bin
+# use `--algo` to select other DQN algorithms
 ```
 
 To visualize the agent:

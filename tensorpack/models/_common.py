@@ -11,6 +11,7 @@ from ..tfutils.argscope import get_arg_scope
 from ..tfutils.modelutils import get_shape_str
 from ..tfutils.summary import add_activation_summary
 from ..utils import logger
+from ..utils.argtools import shape2d
 
 # make sure each layer is only logged once
 _layer_logged = set()
@@ -32,6 +33,8 @@ def layer_register(
         summary the output(activation) of this layer.
         Can be overriden when creating the layer.
     :param log_shape: log input/output shape of this layer
+    :param use_scope: whether to call this layer with an extra first argument as scope
+        if set to False, will try to figure out whether the first argument is scope name
     """
 
     def wrapper(func):
@@ -43,8 +46,16 @@ def layer_register(
                 assert isinstance(name, six.string_types), name
             else:
                 assert not log_shape and not summary_activation
-                inputs = args[0]
-                name = None
+                if isinstance(args[0], six.string_types):
+                    name, inputs = args[0], args[1]
+                    args = args[1:] # actual positional args used to call func
+                else:
+                    inputs = args[0]
+                    name = None
+            if not (isinstance(inputs, (tf.Tensor, tf.Variable)) or
+                    (isinstance(inputs, (list, tuple)) and
+                        isinstance(inputs[0], (tf.Tensor, tf.Variable)))):
+                raise ValueError("Invalid inputs to layer: " + str(inputs))
             do_summary = kwargs.pop(
                 'summary_activation', summary_activation)
 
@@ -92,17 +103,6 @@ def layer_register(
         wrapper = decorator(wrapper)
 
     return wrapper
-
-def shape2d(a):
-    """
-    a: a int or tuple/list of length 2
-    """
-    if type(a) == int:
-        return [a, a]
-    if isinstance(a, (list, tuple)):
-        assert len(a) == 2
-        return list(a)
-    raise RuntimeError("Illegal shape: {}".format(a))
 
 def shape4d(a):
     # for use with tensorflow NHWC ops

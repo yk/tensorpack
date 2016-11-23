@@ -180,12 +180,10 @@ class Model(ModelDesc):
         loss2 = tf.nn.sparse_softmax_cross_entropy_with_logits(logits, label)
         loss2 = tf.reduce_mean(loss2, name='loss2')
 
-        wrong = prediction_incorrect(logits, label, 1)
-        nr_wrong = tf.reduce_sum(wrong, name='wrong-top1')
+        wrong = prediction_incorrect(logits, label, 1, name='wrong-top1')
         add_moving_summary(tf.reduce_mean(wrong, name='train-error-top1'))
 
-        wrong = prediction_incorrect(logits, label, 5)
-        nr_wrong = tf.reduce_sum(wrong, name='wrong-top5')
+        wrong = prediction_incorrect(logits, label, 5, name='wrong-top5')
         add_moving_summary(tf.reduce_mean(wrong, name='train-error-top5'))
 
         # weight decay on all W of fc layers
@@ -260,9 +258,7 @@ def get_config():
     dataset_train = get_data('train')
     dataset_val = get_data('val')
 
-    lr = tf.Variable(0.045, trainable=False, name='learning_rate')
-    tf.scalar_summary('learning_rate', lr)
-
+    lr = get_scalar_var('learning_rate', 0.045, summary=True)
     return TrainConfig(
         dataset=dataset_train,
         optimizer=tf.train.AdamOptimizer(lr, epsilon=1e-3),
@@ -285,7 +281,7 @@ def get_config():
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--gpu', help='comma separated list of GPU(s) to use.') # nargs='*' in multi mode
+    parser.add_argument('--gpu', help='comma separated list of GPU(s) to use.')
     parser.add_argument('--data', help='ILSVRC dataset dir')
     parser.add_argument('--load', help='load model')
     args = parser.parse_args()

@@ -9,6 +9,7 @@ import re
 from .base import Callback
 from ..utils import logger
 from ..tfutils.varmanip import get_savename_from_varname
+from ..tfutils import get_global_step
 
 __all__ = ['ModelSaver', 'MinSaver', 'MaxSaver']
 
@@ -72,18 +73,8 @@ due to an alternative in a different tower".format(v.name, var_dict[name].name))
             self.saver.save(
                 tf.get_default_session(),
                 self.path,
-                global_step=self.global_step,
+                global_step=get_global_step(),
                 write_meta_graph=False)
-
-            # create a symbolic link for the latest model
-            latest = self.saver.last_checkpoints[-1]
-            basename = os.path.basename(latest)
-            linkname = os.path.join(os.path.dirname(latest), 'latest')
-            try:
-                os.unlink(linkname)
-            except OSError:
-                pass
-            os.symlink(basename, linkname)
         except (OSError, IOError):   # disk error sometimes.. just ignore it
             logger.exception("Exception in ModelSaver.trigger_epoch!")
 

@@ -70,7 +70,7 @@ class Model(ModelDesc):
         costs = []
         for idx, b in enumerate([b1, b2, b3, b4, b5, final_map]):
             output = tf.nn.sigmoid(b, name='output{}'.format(idx+1))
-            xentropy = class_balanced_sigmoid_binary_class_cross_entropy(
+            xentropy = class_balanced_sigmoid_cross_entropy(
                 b, edgemap,
                 name='xentropy{}'.format(idx+1))
             costs.append(xentropy)
@@ -80,14 +80,15 @@ class Model(ModelDesc):
         wrong = tf.cast(tf.not_equal(pred, edgemap), tf.float32)
         wrong = tf.reduce_mean(wrong, name='train_error')
 
-        wd_w = tf.train.exponential_decay(2e-4, get_global_step_var(),
-                                          80000, 0.7, True)
-        wd_cost = tf.mul(wd_w, regularize_cost('.*/W', tf.nn.l2_loss), name='wd_cost')
-        costs.append(wd_cost)
+        if get_current_tower_context().is_training:
+            wd_w = tf.train.exponential_decay(2e-4, get_global_step_var(),
+                                              80000, 0.7, True)
+            wd_cost = tf.mul(wd_w, regularize_cost('.*/W', tf.nn.l2_loss), name='wd_cost')
+            costs.append(wd_cost)
 
-        add_moving_summary(costs + [wrong])
-        add_param_summary([('.*/W', ['histogram'])])   # monitor W
-        self.cost = tf.add_n(costs, name='cost')
+            add_moving_summary(costs + [wrong])
+            add_param_summary([('.*/W', ['histogram'])])   # monitor W
+            self.cost = tf.add_n(costs, name='cost')
 
     def get_gradient_processor(self):
         return [ScaleGradient([('convfcweight.*', 0.1), ('conv5_.*', 5)]) ]
@@ -160,17 +161,13 @@ def get_config():
     dataset_train = get_data('train')
     step_per_epoch = dataset_train.size() * 40
     dataset_val = get_data('val')
-    #dataset_test = get_data('test')
 
-    lr = tf.Variable(3e-5, trainable=False, name='learning_rate')
-    tf.scalar_summary('learning_rate', lr)
-
+    lr = get_scalar_var('learning_rate', 3e-5, summary=True)
     return TrainConfig(
         dataset=dataset_train,
         optimizer=tf.train.AdamOptimizer(lr, epsilon=1e-3),
         callbacks=Callbacks([
-            StatPrinter(),
-            ModelSaver(),
+            StatPrinter(), ModelSaver(),
             ScheduledHyperParamSetter('learning_rate', [(30, 6e-6), (45, 1e-6), (60, 8e-7)]),
             HumanHyperParamSetter('learning_rate'),
             InferenceRunner(dataset_val,
@@ -181,28 +178,33 @@ def get_config():
         max_epoch=100,
     )
 
-def run(model_path, image_path):
+def run(model_path, image_path, output):
     pred_config = PredictConfig(
             model=Model(),
-            input_data_mapping=[0],
             session_init=get_model_loader(model_path),
-            output_var_names=['output' + str(k) for k in range(1, 7)])
+            input_names=['image'],
+            output_names=['output' + str(k) for k in range(1, 7)])
     predict_func = get_predict_func(pred_config)
     im = cv2.imread(image_path)
     assert im is not None
     im = cv2.resize(im, (im.shape[1] // 16 * 16, im.shape[0] // 16 * 16))
     outputs = predict_func([[im.astype('float32')]])
-    for k in range(6):
-        pred = outputs[k][0]
-        cv2.imwrite("out{}.png".format(
-            '-fused' if k == 5 else str(k+1)), pred * 255)
+    if output is None:
+        for k in range(6):
+            pred = outputs[k][0]
+            cv2.imwrite("out{}.png".format(
+                '-fused' if k == 5 else str(k+1)), pred * 255)
+    else:
+        pred = outputs[5][0]
+        cv2.imwrite(output, pred * 255)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--gpu', help='comma separated list of GPU(s) to use.') # nargs='*' in multi mode
+    parser.add_argument('--gpu', help='comma separated list of GPU(s) to use.')
     parser.add_argument('--load', help='load model')
     parser.add_argument('--view', help='view dataset', action='store_true')
     parser.add_argument('--run', help='run model on images')
+    parser.add_argument('--output', help='fused output filename. default to out-fused.png')
     args = parser.parse_args()
     if args.gpu:
         os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
@@ -210,7 +212,7 @@ if __name__ == '__main__':
     if args.view:
         view_data()
     elif args.run:
-        run(args.load, args.run)
+        run(args.load, args.run, args.output)
     else:
         config = get_config()
         if args.load:

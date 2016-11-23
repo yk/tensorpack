@@ -109,7 +109,6 @@ class Model(ModelDesc):
 
         # compute the number of failed samples
         wrong = prediction_incorrect(logits, label)
-        nr_wrong = tf.reduce_sum(wrong, name='wrong')
         # monitor training error
         add_moving_summary(tf.reduce_mean(wrong, name='train_error'))
 
@@ -171,7 +170,7 @@ def get_config():
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--gpu', help='the GPU to use') # nargs='*' in multi mode
+    parser.add_argument('--gpu', help='the GPU to use')
     parser.add_argument('--load', help='load a checkpoint')
     parser.add_argument('--dorefa',
             help='number of bits for W,A,G, separated by comma. Defaults to \'1,2,4\'',
