@@ -95,6 +95,11 @@ class Trainer(object):
                 create_summary(name, val), get_global_step())
         self.stat_holder.add_stat(name, val)
 
+    def _create_summary_writer(self):
+        if not hasattr(logger, 'LOG_DIR'):
+            raise RuntimeError("logger directory wasn't set!")
+        return tf.train.SummaryWriter(logger.LOG_DIR, graph=self.sess.graph)
+
     def setup(self):
         self._setup()
         describe_model()
@@ -102,9 +107,8 @@ class Trainer(object):
         logger.info("Setup callbacks ...")
         self.config.callbacks.setup_graph(weakref.proxy(self))
 
-        if not hasattr(logger, 'LOG_DIR'):
-            raise RuntimeError("logger directory wasn't set!")
-        self.summary_writer = tf.train.SummaryWriter(logger.LOG_DIR, graph=self.sess.graph)
+        self.summary_writer = self._create_summary_writer()
+
         self.summary_op = tf.merge_all_summaries()
         # create an empty StatHolder
         self.stat_holder = StatHolder(logger.LOG_DIR)
