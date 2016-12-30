@@ -22,6 +22,9 @@ class GPUMixin(Trainer):
 
 
 class NoGraphSummaryMixin(Trainer):
+    def _setup(self):
+        super()._setup()
+
     def _create_summary_writer(self):
         if not hasattr(logger, 'LOG_DIR'):
             raise RuntimeError(
