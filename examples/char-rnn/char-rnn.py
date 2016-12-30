@@ -15,16 +15,8 @@ from six.moves import map, range
 from tensorpack import *
 from tensorpack.tfutils.gradproc import  *
 from tensorpack.utils.lut import LookUpTable
+from tensorpack.utils.globvars import globalns as param
 
-from tensorflow.python.ops import rnn_cell
-from tensorflow.python.ops import rnn
-
-if six.PY2:
-    class NS: pass  # this is a hack
-else:
-    import types
-    NS = types.SimpleNamespace  # this is what I wanted..
-param = NS()
 # some model hyperparams to set
 param.batch_size = 128
 param.rnn_size = 256
@@ -35,7 +27,7 @@ param.vocab_size = None
 param.softmax_temprature = 1
 param.corpus = 'input.txt'
 
-class CharRNNData(DataFlow):
+class CharRNNData(RNGDataFlow):
     def __init__(self, input_file, size):
         self.seq_length = param.seq_len
         self._size = size
@@ -53,9 +45,6 @@ class CharRNNData(DataFlow):
         self.lut = LookUpTable(self.chars)
         self.whole_seq = np.array(list(map(self.lut.get_idx, data)), dtype='int32')
         logger.info("Corpus loaded. Vocab size: {}".format(self.vocab_size))
-
-    def reset_state(self):
-        self.rng = get_rng(self)
 
     def size(self):
         return self._size
@@ -76,19 +65,18 @@ class Model(ModelDesc):
     def _build_graph(self, input_vars):
         input, nextinput = input_vars
 
-        cell = rnn_cell.BasicLSTMCell(num_units=param.rnn_size)
-        cell = rnn_cell.MultiRNNCell([cell] * param.num_rnn_layer)
+        cell = tf.nn.rnn_cell.BasicLSTMCell(num_units=param.rnn_size)
+        cell = tf.nn.rnn_cell.MultiRNNCell([cell] * param.num_rnn_layer)
 
         self.initial = initial = cell.zero_state(tf.shape(input)[0], tf.float32)
 
         embeddingW = tf.get_variable('embedding', [param.vocab_size, param.rnn_size])
         input_feature = tf.nn.embedding_lookup(embeddingW, input) # B x seqlen x rnnsize
 
-        input_list = tf.split(1, param.seq_len, input_feature)    #seqlen x (Bx1xrnnsize)
-        input_list = [tf.squeeze(x, [1]) for x in input_list]
+        input_list = tf.unstack(input_feature, axis=1)    #seqlen x (Bxrnnsize)
 
         # seqlen is 1 in inference. don't need loop_function
-        outputs, last_state = rnn.rnn(cell, input_list, initial, scope='rnnlm')
+        outputs, last_state = tf.nn.rnn(cell, input_list, initial, scope='rnnlm')
         self.last_state = tf.identity(last_state, 'last_state')
 
         # seqlen x (Bxrnnsize)
@@ -102,8 +90,7 @@ class Model(ModelDesc):
         summary.add_param_summary([('.*/W', ['histogram'])])   # monitor histogram of all W
 
     def get_gradient_processor(self):
-        return [MapGradient(lambda grad: tf.clip_by_global_norm(
-            [grad], param.grad_clip)[0][0])]
+        return [GlobalNormClip(5)]
 
 def get_config():
     logger.auto_set_dir()
@@ -118,9 +105,7 @@ def get_config():
         dataset=ds,
         optimizer=tf.train.AdamOptimizer(lr),
         callbacks=Callbacks([
-            StatPrinter(),
-            ModelSaver(),
-            #HumanHyperParamSetter('learning_rate', 'hyper.txt')
+            StatPrinter(), ModelSaver(),
             ScheduledHyperParamSetter('learning_rate', [(25, 2e-4)])
         ]),
         model=Model(),
@@ -128,6 +113,7 @@ def get_config():
         max_epoch=50,
     )
 
+# TODO rewrite using Predictor interface
 def sample(path, start, length):
     """
     :param path: path to the model

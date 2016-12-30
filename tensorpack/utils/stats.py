@@ -1,9 +1,10 @@
 # -*- coding: UTF-8 -*-
-# File: stat.py
+# File: stats.py
 # Author: Yuxin Wu <ppwwyyxx@gmail.com>
 import numpy as np
 
-__all__ = ['StatCounter', 'Accuracy', 'BinaryStatistics', 'RatioCounter']
+__all__ = ['StatCounter', 'Accuracy', 'BinaryStatistics', 'RatioCounter',
+        'OnlineMoments']
 
 class StatCounter(object):
     """ A simple counter"""
@@ -116,3 +117,31 @@ class BinaryStatistics(object):
         if self.nr_pos == 0:
             return 0
         return 1 - self.recall
+
+class OnlineMoments(object):
+    """Compute 1st and 2nd moments online
+    See algorithm at: https://www.wikiwand.com/en/Algorithms_for_calculating_variance#/Online_algorithm
+    """
+    def __init__(self):
+        self._mean = 0
+        self._M2 = 0
+        self._n = 0
+
+    def feed(self, x):
+        self._n += 1
+        delta = x - self._mean
+        self._mean += delta * (1.0 / self._n)
+        delta2 = x - self._mean
+        self._M2 += delta * delta2
+
+    @property
+    def mean(self):
+        return self._mean
+
+    @property
+    def variance(self):
+        return self._M2 / (self._n-1)
+
+    @property
+    def std(self):
+        return np.sqrt(self.variance)

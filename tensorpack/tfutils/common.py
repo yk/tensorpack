@@ -19,7 +19,8 @@ __all__ = ['get_default_sess_config',
            'backup_collection',
            'restore_collection',
            'clear_collection',
-           'freeze_collection']
+           'freeze_collection',
+           'get_tf_version']
 
 def get_default_sess_config(mem_fraction=0.99):
     """
@@ -47,7 +48,7 @@ def get_global_step_var():
                 "Creating global_step_var under a variable scope would cause problems!"
         with tf.variable_scope(scope, reuse=False):
             var = tf.get_variable(GLOBAL_STEP_OP_NAME, shape=[],
-                    initializer=tf.zeros_initializer,
+                    initializer=tf.constant_initializer(dtype=tf.int32),
                     trainable=False, dtype=tf.int32)
         return var
 
@@ -104,3 +105,6 @@ def freeze_collection(keys):
     backup = backup_collection(keys)
     yield
     restore_collection(backup)
+
+def get_tf_version():
+    return int(tf.__version__.split('.')[1])

@@ -15,15 +15,18 @@ from ..tfutils import (backup_collection, restore_collection,
         get_global_step_var, TowerContext)
 from ..tfutils.gradproc import apply_grad_processors, ScaleGradient
 
-from .trainer import FeedlessTrainer, SingleCostFeedlessTrainer, MultiPredictorTowerTrainer
-from .queue import QueueInputTrainer, QueueInputTrainerBase
+from .base import Trainer
+from .trainer import MultiPredictorTowerTrainer
+from .feedfree import SingleCostFeedfreeTrainer
+from .input_data import QueueInput
 
 __all__ = ['AsyncMultiGPUTrainer', 'SyncMultiGPUTrainer']
 
-class MultiGPUTrainer(FeedlessTrainer):
+class MultiGPUTrainer(Trainer):
     """ Base class for multi-gpu training"""
     @staticmethod
     def _multi_tower_grads(towers, get_tower_grad_func):
+        """ ret[i] is a lists of (grad,var) tuple for tower i"""
         logger.info("Training a model of {} tower".format(len(towers)))
 
         grad_list = []
@@ -42,18 +45,30 @@ class MultiGPUTrainer(FeedlessTrainer):
         restore_collection(backup)
         return grad_list
 
-class SyncMultiGPUTrainer(QueueInputTrainerBase,
-        MultiGPUTrainer,
-        SingleCostFeedlessTrainer,
+class SyncMultiGPUTrainer(MultiGPUTrainer,
+        SingleCostFeedfreeTrainer,
         MultiPredictorTowerTrainer):
     def __init__(self, config, input_queue=None, predict_tower=None):
-        assert len(config.tower) >= 1, "MultiGPUTrainer must be used with at least one GPU."
+        if hasattr(config, 'dataset'):
+            self._input_method = QueueInput(config.dataset, input_queue)
+        else:
+            self._input_method = config.data
+            assert isinstance(self._input_method, QueueInput)
+
+        if predict_tower is not None:
+            logger.warn("[Deprecated] Argument `predict_tower` is deprecated for trainer. Use TrainConfig.predict_tower instead!")
+            config.predict_tower = predict_tower
+
         super(SyncMultiGPUTrainer, self).__init__(config)
-        self._setup_predictor_factory(predict_tower)
-        self._build_enque_thread(input_queue)
+        self._setup_predictor_factory(config.predict_tower)
+        assert len(config.tower) >= 1, "MultiGPUTrainer must be used with at least one GPU."
+        assert tf.test.is_gpu_available()
+
 
     @staticmethod
     def _average_grads(tower_grads):
+        if len(tower_grads) == 1:
+            return tower_grads[0]
         ret = []
         with tf.name_scope('AvgGrad'):
             for grad_and_vars in zip(*tower_grads):
@@ -75,8 +90,15 @@ class SyncMultiGPUTrainer(QueueInputTrainerBase,
         return ret
 
     def _setup(self):
+        super(SyncMultiGPUTrainer, self)._setup()
         grad_list = MultiGPUTrainer._multi_tower_grads(
                 self.config.tower, lambda: self._get_cost_and_grad()[1])
+
+        # debug tower performance:
+        #ops = [k[0] for k in grad_list[1]] + [k[0] for k in grad_list[0]]
+        #self.train_op = tf.group(*ops)
+        #return
+
         grads = SyncMultiGPUTrainer._average_grads(grad_list)
         grads = apply_grad_processors(grads, self.model.get_gradient_processor())
 
@@ -87,22 +109,36 @@ class SyncMultiGPUTrainer(QueueInputTrainerBase,
     def run_step(self):
         self.sess.run(self.train_op)
 
-class AsyncMultiGPUTrainer(QueueInputTrainerBase,
-        MultiGPUTrainer,
-        SingleCostFeedlessTrainer,
+class AsyncMultiGPUTrainer(MultiGPUTrainer,
+        SingleCostFeedfreeTrainer,
         MultiPredictorTowerTrainer):
-    def __init__(self, config, input_queue=None, predict_tower=None):
+    def __init__(self, config,
+            input_queue=None,
+            average_gradient=True,
+            predict_tower=None):
+        if hasattr(config, 'dataset'):
+            self._input_method = QueueInput(config.dataset, input_queue)
+        else:
+            self._input_method = config.data
+            assert isinstance(self._input_method, QueueInput)
         super(AsyncMultiGPUTrainer, self).__init__(config)
-        self._setup_predictor_factory(predict_tower)
-        self._build_enque_thread(input_queue)
+
+        if predict_tower is not None:
+            logger.warn("[Deprecated] Argument `predict_tower` is deprecated for trainer. Use TrainConfig.predict_tower instead!")
+            config.predict_tower = predict_tower
+
+        self._setup_predictor_factory(config.predict_tower)
+        self._average_gradient = average_gradient
+        assert tf.test.is_gpu_available()
 
     def _setup(self):
+        super(AsyncMultiGPUTrainer, self)._setup()
         grad_list = MultiGPUTrainer._multi_tower_grads(
                 self.config.tower, lambda: self._get_cost_and_grad()[1])
         gradprocs = self.model.get_gradient_processor()
-        # pretend to average the grads, in order to make async and
-        # sync have consistent effective learning rate
-        if self.config.nr_tower > 1:
+        if self._average_gradient and self.config.nr_tower > 1:
+            # pretend to average the grads, in order to make async and
+            # sync have consistent effective learning rate
             gradprocs.insert(0, ScaleGradient(('.*', 1.0 / self.config.nr_tower), log=False))
         grad_list = [apply_grad_processors(g, gradprocs) for g in grad_list]
 
@@ -143,10 +179,11 @@ class AsyncMultiGPUTrainer(QueueInputTrainerBase,
         for th in self.training_threads:
             th.pause()
         try:
-            async_step_total_cnt = int(re.findall(
-                '[0-9]+', self.async_step_counter.__str__())[0])
-            self.write_scalar_summary(
-                    'async_global_step', async_step_total_cnt)
+            if self.config.tower > 1:
+                async_step_total_cnt = int(re.findall(
+                    '[0-9]+', self.async_step_counter.__str__())[0])
+                self.write_scalar_summary(
+                        'async_global_step', async_step_total_cnt)
         except:
             logger.exception("Cannot log async_global_step")
         super(AsyncMultiGPUTrainer, self)._trigger_epoch()

@@ -34,15 +34,15 @@ def add_activation_summary(x, name=None):
     if ctx is not None and not ctx.is_main_training_tower:
         return
     ndim = x.get_shape().ndims
+    # TODO use scalar if found ndim == 1
     assert ndim >= 2, \
         "Summary a scalar with histogram? Maybe use scalar instead. FIXME!"
     if name is None:
         name = x.name
-    with tf.name_scope('act_summary'):
-        tf.histogram_summary(name + '/activation', x)
-        tf.scalar_summary(name + '/activation_sparsity', tf.nn.zero_fraction(x))
-        tf.scalar_summary(
-                name + '/activation_rms', rms(x))
+    with tf.name_scope('activation-summary'):
+        tf.summary.histogram(name, x)
+        tf.summary.scalar(name + '-sparsity', tf.nn.zero_fraction(x))
+        tf.summary.scalar(name + '-rms', rms(x))
 
 def add_param_summary(summary_lists):
     """
@@ -59,25 +59,25 @@ def add_param_summary(summary_lists):
         name = var.name.replace(':0', '')
         if action == 'scalar':
             assert ndim == 0, "Scalar summary on high-dimension data. Maybe you want 'mean'?"
-            tf.scalar_summary(name, var)
+            tf.summary.scalar(name, var)
             return
         assert ndim > 0, "Cannot perform {} summary on scalar data".format(action)
         if action == 'histogram':
-            tf.histogram_summary(name, var)
+            tf.summary.histogram(name, var)
             return
         if action == 'sparsity':
-            tf.scalar_summary(name + '/sparsity', tf.nn.zero_fraction(var))
+            tf.summary.scalar(name + '-sparsity', tf.nn.zero_fraction(var))
             return
         if action == 'mean':
-            tf.scalar_summary(name + '/mean', tf.reduce_mean(var))
+            tf.summary.scalar(name + '-mean', tf.reduce_mean(var))
             return
         if action == 'rms':
-            tf.scalar_summary(name + '/rms', rms(var))
+            tf.summary.scalar(name + '-rms', rms(var))
             return
         raise RuntimeError("Unknown summary type: {}".format(action))
 
     params = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)
-    with tf.name_scope('param_summary'):
+    with tf.name_scope('param-summary'):
         for p in params:
             name = p.name
             for rgx, actions in summary_lists:
@@ -99,26 +99,26 @@ def add_moving_summary(v, *args):
         v = [v]
     v.extend(args)
     for x in v:
-        assert x.get_shape().ndims == 0
+        assert x.get_shape().ndims == 0, x.get_shape()
         tf.add_to_collection(MOVING_SUMMARY_VARS_KEY, x)
 
 @memoized
 def summary_moving_average(tensors=None):
     """
-    Create a MovingAverage op and summary for tensors
+    Create a MovingAverage op and add summary for tensors
     :param tensors: list of tf.Tensor to summary. default to the collection MOVING_SUMMARY_VARS_KEY
     :returns: a op to maintain these average.
     """
     if tensors is None:
         tensors = tf.get_collection(MOVING_SUMMARY_VARS_KEY)
-    with tf.name_scope('EMA_summary'):
-        # TODO will produce EMA_summary/tower0/xxx. not elegant
-        with tf.name_scope(None):
-            averager = tf.train.ExponentialMovingAverage(
-                0.99, num_updates=get_global_step_var(), name='EMA')
-        avg_maintain_op = averager.apply(tensors)
-        for idx, c in enumerate(tensors):
-            name = re.sub('tower[p0-9]+/', '', c.op.name)
-            tf.scalar_summary(name, averager.average(c))
-        return avg_maintain_op
+
+    # TODO will produce tower0/xxx. not elegant
+    with tf.name_scope(None):
+        averager = tf.train.ExponentialMovingAverage(
+            0.95, num_updates=get_global_step_var(), name='EMA')
+    avg_maintain_op = averager.apply(tensors)
+    for idx, c in enumerate(tensors):
+        name = re.sub('tower[p0-9]+/', '', c.op.name)
+        tf.summary.scalar(name + '-summary', averager.average(c))
+    return avg_maintain_op
 

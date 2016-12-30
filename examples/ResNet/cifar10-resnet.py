@@ -22,12 +22,13 @@ Identity Mappings in Deep Residual Networks, arxiv:1603.05027
 
 I can reproduce the results on 2 TitanX for
 n=5, about 7.1% val error after 67k steps (8.6 step/s)
-n=18, about 5.9% val error after 80k steps (2.6 step/s)
+n=18, about 5.95% val error after 80k steps (2.6 step/s)
 n=30: a 182-layer network, about 5.6% val error after 51k steps (1.55 step/s)
 This model uses the whole training set instead of a train-val split.
 """
 
 BATCH_SIZE = 128
+NUM_UNITS = None
 
 class Model(ModelDesc):
     def __init__(self, n):
@@ -143,7 +144,7 @@ def get_config():
             ScheduledHyperParamSetter('learning_rate',
                                       [(1, 0.1), (82, 0.01), (123, 0.001), (300, 0.0002)])
         ]),
-        model=Model(n=18),
+        model=Model(n=NUM_UNITS),
         step_per_epoch=step_per_epoch,
         max_epoch=400,
     )
@@ -151,8 +152,12 @@ def get_config():
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--gpu', help='comma separated list of GPU(s) to use.')
+    parser.add_argument('-n', '--num_units',
+            help='number of units in each stage',
+            type=int, default=18)
     parser.add_argument('--load', help='load model')
     args = parser.parse_args()
+    NUM_UNITS = args.num_units
 
     if args.gpu:
         os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu

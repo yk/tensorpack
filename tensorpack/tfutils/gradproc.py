@@ -6,13 +6,15 @@
 import tensorflow as tf
 from abc import ABCMeta, abstractmethod
 import re
+import six
 import inspect
 from ..utils import logger
 from .symbolic_functions import rms
 from .summary import add_moving_summary
 
 __all__ = ['GradientProcessor', 'SummaryGradient', 'CheckGradient',
-           'ScaleGradient', 'MapGradient', 'apply_grad_processors']
+           'ScaleGradient', 'MapGradient', 'apply_grad_processors',
+           'GlobalNormClip']
 
 def apply_grad_processors(grads, gradprocs):
     """
@@ -30,8 +32,8 @@ def apply_grad_processors(grads, gradprocs):
         g = proc.process(g)
     return g
 
+@six.add_metaclass(ABCMeta)
 class GradientProcessor(object):
-    __metaclass__ = ABCMeta
 
     def process(self, grads):
         """
@@ -46,6 +48,20 @@ class GradientProcessor(object):
     @abstractmethod
     def _process(self, grads):
         pass
+
+
+class GlobalNormClip(GradientProcessor):
+    def __init__(self, global_norm):
+        """ Clip by global norm
+            Note that the global norm is the sum of norm for **all** gradients
+        """
+        self._norm = global_norm
+
+    def _process(self, grads):
+        g = [k[0] for k in grads]
+        v = [k[1] for k in grads]
+        g, _ = tf.clip_by_global_norm(g, self._norm, name='clip_by_global_norm')
+        return list(zip(g, v))
 
 class MapGradient(GradientProcessor):
     """
@@ -95,7 +111,7 @@ class SummaryGradient(MapGradient):
         name = var.op.name
         if name not in _summaried_gradient:
             _summaried_gradient.add(name)
-            tf.histogram_summary(name + '/grad', grad)
+            tf.summary.histogram(name + '-grad', grad)
             add_moving_summary(rms(grad, name=name + '/rms'))
         return grad
 

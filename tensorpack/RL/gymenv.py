@@ -14,24 +14,25 @@ try:
     # not sure does it cause other problems
     __all__ = ['GymEnv']
 except ImportError:
-    logger.warn("Cannot import gym. GymEnv won't be available.")
+    logger.warn_dependency('GymEnv', 'gym')
     __all__ = []
 
 import threading
 
-from ..utils.fs import *
-from ..utils.stat import *
+from ..utils.fs import mkdir_p
+from ..utils.stats import StatCounter
 from .envbase import RLEnvironment, DiscreteActionSpace
 
 
-_ALE_LOCK = threading.Lock()
+_ENV_LOCK = threading.Lock()
 
 class GymEnv(RLEnvironment):
     """
     An OpenAI/gym wrapper. Can optionally auto restart.
+    Only support discrete action space now
     """
     def __init__(self, name, dumpdir=None, viz=False, auto_restart=True):
-        with _ALE_LOCK:
+        with _ENV_LOCK:
             self.gymenv = gym.make(name)
         if dumpdir:
             mkdir_p(dumpdir)
@@ -77,7 +78,7 @@ if __name__ == '__main__':
     env = GymEnv('Breakout-v0', viz=0.1)
     num = env.get_action_space().num_actions()
 
-    from ..utils import *
+    from ..utils import get_rng
     rng = get_rng(num)
     while True:
         act = rng.choice(range(num))

@@ -5,13 +5,18 @@
 
 
 from abc import abstractmethod, ABCMeta
+import six
 from ..utils import get_rng
 
 __all__ = ['DataFlow', 'ProxyDataFlow', 'RNGDataFlow']
 
+@six.add_metaclass(ABCMeta)
 class DataFlow(object):
     """ Base class for all DataFlow """
-    __metaclass__ = ABCMeta
+
+    class Infinity:
+        pass
+
 
     @abstractmethod
     def get_data(self):

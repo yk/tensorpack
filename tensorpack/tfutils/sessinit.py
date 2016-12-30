@@ -10,7 +10,7 @@ import numpy as np
 import tensorflow as tf
 import six
 
-from ..utils import logger
+from ..utils import logger, PREDICT_TOWER
 from .common import get_op_var_name
 from .varmanip import SessionUpdate, get_savename_from_varname, is_training_name
 
@@ -20,9 +20,9 @@ __all__ = ['SessionInit', 'NewSession', 'SaverRestore',
 
 # TODO they initialize_all at the beginning by default.
 
+@six.add_metaclass(ABCMeta)
 class SessionInit(object):
     """ Base class for utilities to initialize a session"""
-    __metaclass__ = ABCMeta
 
     def init(self, sess):
         """ Initialize a session
@@ -104,8 +104,8 @@ class SaverRestore(SessionInit):
         reader = tf.train.NewCheckpointReader(model_path)
         ckpt_vars = reader.get_variable_to_shape_map().keys()
         for v in ckpt_vars:
-            if v.startswith('towerp'):
-                logger.warn("Found {} in checkpoint. Anything from prediction tower shouldn't be saved.".format(v.name))
+            if v.startswith(PREDICT_TOWER):
+                logger.error("Found {} in checkpoint. But anything from prediction tower shouldn't be saved.".format(v.name))
         return set(ckpt_vars)
 
     def _get_vars_to_restore_multimap(self, vars_available):
@@ -113,7 +113,10 @@ class SaverRestore(SessionInit):
         :param vars_available: varaible names available in the checkpoint, for existence checking
         :returns: a dict of {var_name: [var, var]} to restore
         """
-        vars_to_restore = tf.all_variables()
+        try:
+            vars_to_restore = tf.global_variables()
+        except AttributeError:
+            vars_to_restore = tf.all_variables()
         var_dict = defaultdict(list)
         chkpt_vars_used = set()
         for v in vars_to_restore:
@@ -150,7 +153,7 @@ class ParamRestore(SessionInit):
         self.prms = {get_op_var_name(n)[1]: v for n, v in six.iteritems(param_dict)}
 
     def _init(self, sess):
-        variables = tf.get_collection(tf.GraphKeys.VARIABLES)
+        variables = tf.get_collection(tf.GraphKeys().VARIABLES) # TODO
 
         variable_names = set([get_savename_from_varname(k.name) for k in variables])
         param_names = set(six.iterkeys(self.prms))
@@ -164,7 +167,6 @@ class ParamRestore(SessionInit):
                 logger.warn("Variable {} in the graph not found in the dict!".format(k))
         for k in param_names - variable_names:
             logger.warn("Variable {} in the dict not found in the graph!".format(k))
-
 
         upd = SessionUpdate(sess,
                 [v for v in variables if \
@@ -195,6 +197,7 @@ def get_model_loader(filename):
     :return: either a ParamRestore or SaverRestore
     """
     if filename.endswith('.npy'):
+        assert os.path.isfile(filename), filename
         return ParamRestore(np.load(filename, encoding='latin1').item())
     else:
         return SaverRestore(filename)

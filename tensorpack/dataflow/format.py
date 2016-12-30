@@ -4,16 +4,18 @@
 
 import numpy as np
 from six.moves import range
+import os
 
 from ..utils import logger, get_rng, get_tqdm
 from ..utils.timer import timed_operation
 from ..utils.loadcaffe import get_caffe_pb
+from ..utils.serialize import loads
 from .base import RNGDataFlow
 
 try:
     import h5py
 except ImportError:
-    logger.warn("Error in 'import h5py'. HDF5Data won't be available.")
+    logger.warn_dependency("HDF5Data", 'h5py')
     __all__ = []
 else:
     __all__ = ['HDF5Data']
@@ -21,14 +23,14 @@ else:
 try:
     import lmdb
 except ImportError:
-    logger.warn("Error in 'import lmdb'. LMDBData won't be available.")
+    logger.warn_dependency("LMDBData", 'lmdb')
 else:
-    __all__.extend(['LMDBData', 'CaffeLMDB', 'LMDBDataDecoder'])
+    __all__.extend(['LMDBData', 'CaffeLMDB', 'LMDBDataDecoder', 'LMDBDataPoint'])
 
 try:
     import sklearn.datasets
 except ImportError:
-    logger.warn("Error in 'import sklearn'. SVMLightData won't be available.")
+    logger.warn_dependency('SVMLightData', 'sklearn')
 else:
     __all__.extend(['SVMLightData'])
 
@@ -69,27 +71,33 @@ class HDF5Data(RNGDataFlow):
 
 class LMDBData(RNGDataFlow):
     """ Read a lmdb and produce k,v pair """
-    def __init__(self, lmdb_dir, shuffle=True):
-        self._lmdb = lmdb.open(lmdb_dir, readonly=True, lock=False,
+    def __init__(self, lmdb_path, shuffle=True):
+        self._lmdb_path = lmdb_path
+        self._shuffle = shuffle
+        self.open_lmdb()
+
+    def open_lmdb(self):
+        self._lmdb = lmdb.open(self._lmdb_path,
+                subdir=os.path.isdir(self._lmdb_path),
+                readonly=True, lock=False, readahead=False,
                 map_size=1099511627776 * 2, max_readers=100)
         self._txn = self._lmdb.begin()
-        self._shuffle = shuffle
         self._size = self._txn.stat()['entries']
-        if shuffle:
+        if self._shuffle:
             # get the list of keys either from __keys__ or by iterating
-            self.keys = self._txn.get('__keys__')
+            self.keys = loads(self._txn.get('__keys__'))
             if not self.keys:
                 self.keys = []
                 with timed_operation("Loading LMDB keys ...", log_start=True), \
                         get_tqdm(total=self._size) as pbar:
                     for k in self._txn.cursor():
-                        if k != '__keys__':
-                            self.keys.append(k)
+                        if k[0] != '__keys__':
+                            self.keys.append(k[0])
                             pbar.update()
 
     def reset_state(self):
         super(LMDBData, self).reset_state()
-        self._txn = self._lmdb.begin()
+        self.open_lmdb()
 
     def size(self):
         return self._size
@@ -109,12 +117,12 @@ class LMDBData(RNGDataFlow):
                 yield [k, v]
 
 class LMDBDataDecoder(LMDBData):
-    def __init__(self, lmdb_dir, decoder, shuffle=True):
+    def __init__(self, lmdb_path, decoder, shuffle=True):
         """
         :param decoder: a function taking k, v and return a data point,
             or return None to skip
         """
-        super(LMDBDataDecoder, self).__init__(lmdb_dir, shuffle)
+        super(LMDBDataDecoder, self).__init__(lmdb_path, shuffle)
         self.decoder = decoder
 
     def get_data(self):
@@ -122,9 +130,15 @@ class LMDBDataDecoder(LMDBData):
             v = self.decoder(dp[0], dp[1])
             if v: yield v
 
+class LMDBDataPoint(LMDBDataDecoder):
+    """ Read a LMDB file where each value is a serialized datapoint"""
+    def __init__(self, lmdb_path, shuffle=True):
+        super(LMDBDataPoint, self).__init__(
+                lmdb_path, decoder=lambda k, v: loads(v), shuffle=shuffle)
+
 class CaffeLMDB(LMDBDataDecoder):
     """ Read a Caffe LMDB file where each value contains a caffe.Datum protobuf """
-    def __init__(self, lmdb_dir, shuffle=True):
+    def __init__(self, lmdb_path, shuffle=True):
         cpb = get_caffe_pb()
         def decoder(k, v):
             try:
@@ -138,7 +152,7 @@ class CaffeLMDB(LMDBDataDecoder):
             return [img.transpose(1, 2, 0), datum.label]
 
         super(CaffeLMDB, self).__init__(
-                lmdb_dir, decoder=decoder, shuffle=shuffle)
+                lmdb_path, decoder=decoder, shuffle=shuffle)
 
 class SVMLightData(RNGDataFlow):
     """ Read X,y from a svmlight file """

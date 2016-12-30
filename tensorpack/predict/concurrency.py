@@ -13,7 +13,7 @@ from ..utils.concurrency import DIE
 from ..tfutils.modelutils import describe_model
 from ..utils import logger
 
-from .base import *
+from .base import OfflinePredictor, AsyncPredictorBase
 
 try:
     if six.PY2:
@@ -21,7 +21,7 @@ try:
     else:
         from concurrent.futures import Future
 except ImportError:
-    logger.warn("Cannot import Future in tornado.concurrent. MultiThreadAsyncPredictor won't be available.")
+    logger.warn_dependency('MultiThreadAsyncPredictor', 'tornado.concurrent')
     __all__ = ['MultiProcessPredictWorker', 'MultiProcessQueuePredictWorker']
 else:
     __all__ = ['MultiProcessPredictWorker', 'MultiProcessQueuePredictWorker',
@@ -46,6 +46,7 @@ class MultiProcessPredictWorker(multiprocessing.Process):
             from tensorpack.models._common import disable_layer_logging
             disable_layer_logging()
         self.predictor = OfflinePredictor(self.config)
+        import sys
         if self.idx == 0:
             with self.predictor.graph.as_default():
                 describe_model()

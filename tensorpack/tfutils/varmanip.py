@@ -3,7 +3,7 @@
 # File: varmanip.py
 # Author: Yuxin Wu <ppwwyyxxc@gmail.com>
 
-import six
+import six, os
 import tensorflow as tf
 from collections import defaultdict
 import re
@@ -25,8 +25,8 @@ def get_savename_from_varname(
     :returns: the name used to save the variable
     """
     name = varname
-    if 'towerp/' in name:
-        logger.error("No variable should be under 'towerp' name scope".format(v.name))
+    if PREDICT_TOWER in name:
+        logger.error("No variable under '{}' name scope should be saved!".format(PREDICT_TOWER))
         # don't overwrite anything in the current prediction graph
         return None
     if 'tower' in name:
@@ -92,6 +92,8 @@ the same name".format(v.name))
 
 def dump_chkpt_vars(model_path):
     """ Dump all variables from a checkpoint to a dict"""
+    if os.path.basename(model_path) == model_path:
+        model_path = os.path.join('.', model_path)  # avoid #4921
     reader = tf.train.NewCheckpointReader(model_path)
     var_names = reader.get_variable_to_shape_map().keys()
     result = {}

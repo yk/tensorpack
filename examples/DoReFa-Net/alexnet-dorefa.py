@@ -22,7 +22,7 @@ DoReFa-Net: Training Low Bitwidth Convolutional Neural Networks with Low Bitwidt
 http://arxiv.org/abs/1606.06160
 
 The original experiements are performed on a proprietary framework.
-This is our attempt to reproduce it on tensorpack/tensorflow.
+This is our attempt to reproduce it on tensorpack & TensorFlow.
 
 Accuracy:
     Trained with 4 GPUs and (W,A,G)=(1,2,6), it can reach top-1 single-crop validation error of 51%,
@@ -40,8 +40,8 @@ Accuracy:
 Speed:
     About 2.8 iteration/s on 1 TitanX. (Each epoch is set to 10000 iterations)
 
-To Train:
-    ./alexnet-dorefa.py --dorefa 1,2,6 --data PATH --gpu 0,1,2,3
+To Train, for example:
+    ./alexnet-dorefa.py --dorefa 1,2,6 --data PATH --gpu 0,1
 
     PATH should look like:
     PATH/
@@ -54,9 +54,10 @@ To Train:
         ILSVRC2012_val_00000001.JPEG
         ...
 
-    And better to have:
+    And you'll need the following to be able to fetch data efficiently
         Fast disk random access (Not necessarily SSD. I used a RAID of HDD, but not sure if plain HDD is enough)
         More than 12 CPU cores (for data processing)
+        More than 10G of free memory
 
 To Run Pretrained Model:
     ./alexnet-dorefa.py --load alexnet-126.npy --run a.jpg --dorefa 1,2,6
@@ -303,6 +304,7 @@ if __name__ == '__main__':
     assert args.gpu is not None, "Need to specify a list of gpu for training!"
     NR_GPU = len(args.gpu.split(','))
     BATCH_SIZE = TOTAL_BATCH_SIZE // NR_GPU
+    logger.info("Batch per tower: {}".format(BATCH_SIZE))
 
     config = get_config()
     if args.load:

@@ -75,3 +75,4 @@ checkpoint
 *.json
 *.prototxt
 snippet
+*.txt

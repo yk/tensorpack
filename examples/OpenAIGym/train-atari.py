@@ -17,8 +17,7 @@ from six.moves import queue
 from tensorpack import *
 from tensorpack.utils.concurrency import *
 from tensorpack.utils.serialize import *
-from tensorpack.utils.timer import *
-from tensorpack.utils.stat import  *
+from tensorpack.utils.stats import  *
 from tensorpack.tfutils import symbolic_functions as symbf
 
 from tensorpack.RL import *
@@ -240,20 +239,24 @@ if __name__ == '__main__':
         if args.gpu:
             nr_gpu = get_nr_gpu()
             if nr_gpu > 1:
-                predict_tower = range(nr_gpu)[-nr_gpu/2:]
+                predict_tower = range(nr_gpu)[-nr_gpu//2:]
             else:
                 predict_tower = [0]
             PREDICTOR_THREAD = len(predict_tower) * PREDICTOR_THREAD_PER_GPU
-            train_tower = range(nr_gpu)[:-nr_gpu/2] or [0]
+            train_tower = range(nr_gpu)[:-nr_gpu//2] or [0]
             logger.info("[BA3C] Train on gpu {} and infer on gpu {}".format(
                 ','.join(map(str, train_tower)), ','.join(map(str, predict_tower))))
+            trainer = AsyncMultiGPUTrainer
         else:
+            logger.warn("Without GPU this model will never learn! CPU is only useful for debug.")
             nr_gpu = 0
             PREDICTOR_THREAD = 1
             predict_tower = [0]
             train_tower = [0]
+            trainer = QueueInputTrainer
         config = get_config()
         if args.load:
             config.session_init = SaverRestore(args.load)
         config.tower = train_tower
-        AsyncMultiGPUTrainer(config, predict_tower=predict_tower).train()
+        config.predict_tower = predict_tower
+        trainer(config).train()

@@ -1,9 +1,9 @@
 
 ## imagenet-resnet.py
 
-Training code of pre-activation ResNet on ImageNet. It follows the setup in
-[fb.resnet.torch](https://github.com/facebook/fb.resnet.torch) and gets similar performance (with much fewer lines of code).
-Models can be [downloaded here](https://drive.google.com/open?id=0B9IPQTvr2BBkTXBlZmh1cmlnQ0k).
+__Training__ code of pre-activation ResNet on ImageNet. It follows the setup in
+[fb.resnet.torch](https://github.com/facebook/fb.resnet.torch) (except for the weight decay) and gets similar performance (with much fewer lines of code).
+Models can be [downloaded here](https://goo.gl/6XjK9V).
 
 | Model              | Top 5 Error | Top 1 Error |
 |:-------------------|-------------|------------:|
@@ -16,7 +16,7 @@ Models can be [downloaded here](https://drive.google.com/open?id=0B9IPQTvr2BBkTX
 
 ## load-resnet.py
 
-A script to convert and run ImageNet-ResNet{50,101,152} Caffe models [released by Kaiming](https://github.com/KaimingHe/deep-residual-networks).
+This script only converts and runs ImageNet-ResNet{50,101,152} Caffe models [released by Kaiming](https://github.com/KaimingHe/deep-residual-networks).
 
 Example usage:
 ```bash
@@ -44,4 +44,4 @@ The validation error here is computed on test set.
 
 ![cifar10](cifar10-resnet.png)
 
-Also see an implementation of [DenseNet](https://github.com/YixuanLi/densenet-tensorflow) from [Densely Connected Convolutional Networks](https://arxiv.org/abs/1608.06993).
+Also see a [DenseNet implementation](https://github.com/YixuanLi/densenet-tensorflow) of the paper [Densely Connected Convolutional Networks](https://arxiv.org/abs/1608.06993).

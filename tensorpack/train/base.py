@@ -6,6 +6,7 @@ from abc import ABCMeta, abstractmethod
 import signal
 import re
 import weakref
+import six
 from six.moves import range
 import tqdm
 
@@ -22,21 +23,25 @@ __all__ = ['Trainer', 'StopTraining']
 
 class StopTraining(BaseException):
     pass
-
+@six.add_metaclass(ABCMeta)
 class Trainer(object):
-    """
-    Base class for a trainer.
+    """ Base class for a trainer."""
 
-    Available Attritbutes:
-        stat_holder: a `StatHolder` instance
-        summary_writer: a `tf.SummaryWriter`
-        summary_op: a `tf.Operation` which returns summary string
-        config: a `TrainConfig`
-        model: a `ModelDesc`
-        sess: a `tf.Session`
-        coord: a `tf.train.Coordinator`
-    """
-    __metaclass__ = ABCMeta
+    """a `StatHolder` instance"""
+    stat_holder = None
+
+    """`tf.SummaryWriter`"""
+    summary_writer = None
+    """a tf.Tensor which returns summary string"""
+    summary_op = None
+    """ TrainConfig """
+    config = None
+    """ a ModelDesc"""
+    model = None
+    """ the current session"""
+    sess = None
+    """ the `tf.train.Coordinator` """
+    coord = None
 
     def __init__(self, config):
         """
@@ -45,7 +50,6 @@ class Trainer(object):
         assert isinstance(config, TrainConfig), type(config)
         self.config = config
         self.model = config.model
-        self.model.get_input_vars()  # ensure they are present
         self.sess = tf.Session(config=self.config.session_config)
         self.coord = tf.train.Coordinator()
 
@@ -87,6 +91,9 @@ class Trainer(object):
         for val in summary.value:
             if val.WhichOneof('value') == 'simple_value':
                 val.tag = re.sub('tower[p0-9]+/', '', val.tag)   # TODO move to subclasses
+                suffix = '-summary' # issue#6150
+                if val.tag.endswith(suffix):
+                    val.tag = val.tag[:-len(suffix)]
                 self.stat_holder.add_stat(val.tag, val.simple_value)
         self.summary_writer.add_summary(summary, get_global_step())
 
@@ -103,18 +110,25 @@ class Trainer(object):
     def setup(self):
         self._setup()
         describe_model()
+        get_global_step_var()
         # some final operations that might modify the graph
         logger.info("Setup callbacks ...")
         self.config.callbacks.setup_graph(weakref.proxy(self))
 
+        if not hasattr(logger, 'LOG_DIR'):
+            raise RuntimeError("logger directory wasn't set!")
         self.summary_writer = self._create_summary_writer()
-
-        self.summary_op = tf.merge_all_summaries()
+        self.summary_op = tf.summary.merge_all()
         # create an empty StatHolder
         self.stat_holder = StatHolder(logger.LOG_DIR)
 
         logger.info("Initializing graph variables ...")
-        self.sess.run(tf.initialize_all_variables())
+        # TODO newsession + sessinit?
+        try:
+            initop = tf.global_variables_initializer()
+        except:
+            initop = tf.initialize_all_variables()
+        self.sess.run(initop)
         self.config.session_init.init(self.sess)
 
         tf.get_default_graph().finalize()
@@ -144,7 +158,8 @@ class Trainer(object):
                                 return
                             self.run_step() # implemented by subclass
                             callbacks.trigger_step()   # not useful?
-                        self.trigger_epoch()
+                    # trigger epoch outside the timing region.
+                    self.trigger_epoch()
             except StopTraining:
                 logger.info("Training was stopped.")
             except:

@@ -1,17 +1,24 @@
-### A3C code and models for my Gym submissions on Atari games
+### Code and models for my Gym submissions on Atari games
+
+Implemented A3C in [Asynchronous Methods for Deep Reinforcement Learning](http://arxiv.org/abs/1602.01783).
 
 ### To train on an Atari game:
 
 `./train-atari.py --env Breakout-v0 --gpu 0`
 
+It should run at a speed of 6~10 iteration/s on 1 GPU.
+Training with a significant slower speed (e.g. on CPU) will give bad performance,
+probably because of async issues.
+The pre-trained models are all trained with 4 GPUs for about 2 days.
+
 ### To run a pretrained Atari model for 100 episodes:
 
-1. Download models from [model zoo](https://drive.google.com/open?id=0B9IPQTvr2BBkS0VhX0xmS1c5aFk)
+1. Download models from [model zoo](https://goo.gl/9yIol2)
 2. `ENV=Breakout-v0; ./run-atari.py --load "$ENV".tfmodel --env "$ENV" --episode 100 --output output_dir`
 
-Models are available for the following gym atari environments (click links for videos):
+Models are available for the following gym atari environments (click links for videos on gym):
 
-+ [AirRaid](https://gym.openai.com/evaluations/eval_zIeNk5MxSGOmvGEUxrZDUw) (a bit flickering, don't know why)
++ [AirRaid](https://gym.openai.com/evaluations/eval_zIeNk5MxSGOmvGEUxrZDUw) (this one is flickering, don't know why)
 + [Alien](https://gym.openai.com/evaluations/eval_8NR1IvjTQkSIT6En4xSMA)
 + [Amidar](https://gym.openai.com/evaluations/eval_HwEazbHtTYGpCialv9uPhA)
 + [Assault](https://gym.openai.com/evaluations/eval_tCiHwy5QrSdFVucSbBV6Q)

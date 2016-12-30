@@ -15,12 +15,11 @@ from ..tfutils import get_op_var_name
 
 __all__ = ['HyperParamSetter', 'HumanHyperParamSetter',
            'ScheduledHyperParamSetter',
-           'StatMonitorParamSetter',
+           'StatMonitorParamSetter', 'HyperParamSetterWithFunc',
            'HyperParam', 'GraphVarParam', 'ObjAttrParam']
-
+@six.add_metaclass(ABCMeta)
 class HyperParam(object):
     """ Base class for a hyper param"""
-    __metaclass__ = ABCMeta
 
     def setup_graph(self):
         """ setup the graph in `setup_graph` callback stage, if necessary"""
@@ -44,7 +43,12 @@ class GraphVarParam(HyperParam):
         self._readable_name, self.var_name = get_op_var_name(name)
 
     def setup_graph(self):
-        all_vars = tf.all_variables()
+        try:
+            all_vars = tf.global_variables()
+        except:
+            # TODO
+            all_vars = tf.all_variables()
+
         for v in all_vars:
             if v.name == self.var_name:
                 self.var = v
@@ -83,7 +87,6 @@ class HyperParamSetter(Callback):
     """
     Base class to set hyperparameters after every epoch.
     """
-    __metaclass__ = ABCMeta
 
     def __init__(self, param):
         """
@@ -167,7 +170,8 @@ class ScheduledHyperParamSetter(HyperParamSetter):
     def __init__(self, param, schedule, interp=None):
         """
         :param schedule: [(epoch1, val1), (epoch2, val2), (epoch3, val3), ...]
-            The value is fixed to val1 in epoch [epoch1, epoch2), and so on.
+            (ep, val) means set the param to `val` after the `ep`th epoch.
+            If epoch == 0, the value is set before training.
         :param interp: None: no interpolation. 'linear': linear interpolation
         """
         schedule = [(int(a), float(b)) for a, b in schedule]
@@ -197,15 +201,24 @@ class ScheduledHyperParamSetter(HyperParamSetter):
             v = (self.epoch_num - laste) * 1. / (e - laste) * (v - lastv) + lastv
             return v
 
+class HyperParamSetterWithFunc(HyperParamSetter):
+    def __init__(self, param, func):
+        """Set hyperparameter by a func
+        new_value = f(epoch_num, old_value)
+        """
+        super(HyperParamSetterWithFunc, self).__init__(param)
+        self.f = func
+
+    def _get_value_to_set(self):
+        return self.f(self.epoch_num, self.get_current_value())
+
 class StatMonitorParamSetter(HyperParamSetter):
-    """
-    Set hyperparameter by a func, when a specific stat wasn't
-    decreasing/increasing enough in the last $k$ epochs
-    """
     def __init__(self, param, stat_name, value_func, threshold,
             last_k, reverse=False
             ):
         """
+        Set hyperparameter by a func, when a specific stat wasn't
+        decreasing/increasing enough in the last $k$ epochs.
         Change param by `new_value = value_func(old_value)`,
         if :
             min(stats) >= stats[0] - threshold, where
@@ -243,5 +256,7 @@ class StatMonitorParamSetter(HyperParamSetter):
             if hist_max > hist_first + self.threshold: # large enough
                 return None
         self.last_changed_epoch = self.epoch_num
+        logger.info("[StatMonitorParamSetter] Triggered, history: " +
+                ','.join(map(str, hist)))
         return self.value_func(self.get_current_value())
 

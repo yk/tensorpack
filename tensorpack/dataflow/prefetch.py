@@ -12,7 +12,8 @@ import uuid
 import os
 
 from .base import ProxyDataFlow
-from ..utils.concurrency import *
+from ..utils.concurrency import (ensure_proc_terminate,
+        mask_sigint, start_proc_mask_signal)
 from ..utils.serialize import loads, dumps
 from ..utils import logger
 from ..utils.gpu import change_gpu
@@ -21,7 +22,7 @@ __all__ = ['PrefetchData', 'BlockParallel']
 try:
     import zmq
 except ImportError:
-    logger.warn("Error in 'import zmq'. PrefetchDataZMQ won't be available.")
+    logger.warn_dependency('PrefetchDataZMQ', 'zmq')
 else:
     __all__.extend(['PrefetchDataZMQ', 'PrefetchOnGPUs'])
 
@@ -82,6 +83,7 @@ class PrefetchData(ProxyDataFlow):
         pass
 
 def BlockParallel(ds, queue_size):
+    # TODO more doc
     """
     Insert `BlockParallel` in dataflow pipeline to block parallelism on ds
 
@@ -104,7 +106,7 @@ class PrefetchProcessZMQ(mp.Process):
         self.ds.reset_state()
         self.context = zmq.Context()
         self.socket = self.context.socket(zmq.PUSH)
-        self.socket.set_hwm(1)
+        self.socket.set_hwm(5)
         self.socket.connect(self.conn_name)
         while True:
             for dp in self.ds.get_data():
@@ -147,11 +149,16 @@ class PrefetchDataZMQ(ProxyDataFlow):
         start_proc_mask_signal(self.procs)
 
     def get_data(self):
-        for k in itertools.count():
-            if self._size > 0 and k >= self._size:
-                break
-            dp = loads(self.socket.recv(copy=False).bytes)
-            yield dp
+        try:
+            for k in itertools.count():
+                if self._size > 0 and k >= self._size:
+                    break
+                dp = loads(self.socket.recv(copy=False).bytes)
+                yield dp
+        except zmq.ContextTerminated:
+            logger.info("ContextTerminated in Master Prefetch Process")
+        except:
+            raise
 
     def reset_state(self):
         # do nothing. all ds are reset once and only once in spawned processes
@@ -170,7 +177,8 @@ class PrefetchDataZMQ(ProxyDataFlow):
             pass
 
 class PrefetchOnGPUs(PrefetchDataZMQ):
-    """ Prefetch with each process having a specific CUDA_VISIBLE_DEVICES"""
+    """ Prefetch with each process having a specific CUDA_VISIBLE_DEVICES
+    variable"""
     def __init__(self, ds, gpus, pipedir=None):
         self.gpus = gpus
         super(PrefetchOnGPUs, self).__init__(ds, len(gpus), pipedir)

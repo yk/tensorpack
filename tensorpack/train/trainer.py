@@ -8,17 +8,15 @@ from six.moves import zip
 
 from .base import Trainer
 
-from ..dataflow.common import RepeatedData
-
-from ..utils import logger, SUMMARY_BACKUP_KEYS
+from ..utils import logger, SUMMARY_BACKUP_KEYS, PREDICT_TOWER
 from ..tfutils import (get_tensors_by_names, freeze_collection,
         get_global_step_var, TowerContext)
 from ..tfutils.summary import summary_moving_average, add_moving_summary
 from ..predict import OnlinePredictor, build_multi_tower_prediction_graph
 from ..tfutils.gradproc import apply_grad_processors
+from .input_data import FeedInput, FeedfreeInput
 
-__all__ = ['SimpleTrainer', 'FeedlessTrainer', 'MultiPredictorTowerTrainer',
-        'SingleCostFeedlessTrainer']
+__all__ = ['SimpleTrainer','MultiPredictorTowerTrainer']
 
 class PredictorFactory(object):
     """ Make predictors for a trainer"""
@@ -41,16 +39,17 @@ class PredictorFactory(object):
             self._build_predict_tower()
         tower = self.towers[tower % len(self.towers)]
         raw_input_vars = get_tensors_by_names(input_names)
-        output_names = ['towerp{}/'.format(tower) + n for n in output_names]
+        output_names = ['{}{}/'.format(PREDICT_TOWER, tower) + n for n in output_names]
         output_vars = get_tensors_by_names(output_names)
         return OnlinePredictor(self.sess, raw_input_vars, output_vars)
 
     def _build_predict_tower(self):
         tf.get_variable_scope().reuse_variables()
-        # build_predict_tower might get called anywhere, but 'towerp' should be the outermost name scope
+        # build_predict_tower might get called anywhere, but 'PREDICT_TOWER' should be the outermost name scope
         with tf.name_scope(None), \
                 freeze_collection(SUMMARY_BACKUP_KEYS):
-            build_multi_tower_prediction_graph(self.model, self.towers)
+            fn = lambda _: self.model.build_graph(self.model.get_input_vars())
+            build_multi_tower_prediction_graph(fn, self.towers)
         self.tower_built = True
 
 class SimpleTrainer(Trainer):
@@ -58,16 +57,21 @@ class SimpleTrainer(Trainer):
     def __init__(self, config):
         super(SimpleTrainer, self).__init__(config)
         self._predictor_factory = PredictorFactory(self.sess, self.model, [0])
+        if not hasattr(config, 'dataset'):
+            self._input_method = config.data
+            assert isinstance(self._input_method, FeedInput)
+        else:
+            self._input_method = FeedInput(config.dataset)
 
     def run_step(self):
-        data = next(self.data_producer)
-        feed = dict(zip(self.input_vars, data))
+        feed = self._input_method.next_feed()
         self.sess.run([self.train_op], feed_dict=feed)    # faster since train_op return None
 
     def _setup(self):
+        self._input_method._setup(self)
         model = self.model
         self.input_vars = model.get_input_vars()
-        with TowerContext(''):
+        with TowerContext('', is_training=True):
             model.build_graph(self.input_vars)
             cost_var = model.get_cost()
             add_moving_summary(cost_var)
@@ -80,14 +84,9 @@ class SimpleTrainer(Trainer):
             self.config.optimizer.apply_gradients(grads, get_global_step_var()),
             summary_moving_average(), name='train_op')
 
-        # create an infinte data producer
-        self.config.dataset.reset_state()
-        self.data_producer = RepeatedData(self.config.dataset, -1).get_data()
-
     def _trigger_epoch(self):
         if self.summary_op is not None:
-            data = next(self.data_producer)
-            feed = dict(zip(self.input_vars, data))
+            feed = self._input_method.next_feed()
             summary_str = self.summary_op.eval(feed_dict=feed)
             self._process_summary(summary_str)
 
@@ -111,30 +110,3 @@ class MultiPredictorTowerTrainer(Trainer):
 
     def get_predict_funcs(self, input_names, output_names, n):
         return [self.get_predict_func(input_names, output_names, k) for k in range(n)]
-
-class FeedlessTrainer(Trainer):
-    """ A trainer which runs iteration without feed_dict (therefore faster) """
-    def _trigger_epoch(self):
-        # need to run summary_op every epoch
-        # note that summary_op will take a data from the queue
-        if self.summary_op is not None:
-            summary_str = self.summary_op.eval()
-            self._process_summary(summary_str)
-
-    def _get_input_tensors_noreuse(self):
-        """ return a list of actual input tensors.
-            Always return new tensors (for multi tower) if called mutliple times.
-        """
-
-class SingleCostFeedlessTrainer(Trainer):
-    def _get_cost_and_grad(self):
-        """ get the cost and gradient on a new tower"""
-        actual_inputs = self._get_input_tensors_noreuse()
-        self.model.build_graph(actual_inputs)
-        cost_var = self.model.get_cost()
-        # GATE_NONE faster?
-        grads = self.config.optimizer.compute_gradients(
-                cost_var, gate_gradients=0)
-        add_moving_summary(cost_var)
-        return cost_var, grads
-
